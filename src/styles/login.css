@@ -7,8 +7,8 @@
   overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(255, 231, 108, 0.3), transparent 28%),
-    radial-gradient(circle at top right, rgba(0, 122, 255, 0.28), transparent 34%),
-    linear-gradient(135deg, #07131f 0%, #0b2239 46%, #145fb9 100%);
+    radial-gradient(circle at top right, rgba(236, 239, 243, 0.945), transparent 34%),
+    linear-gradient(135deg, #f7f8f8 0%, #c9daeb 46%, #dce2e9 100%);
   padding: 48px 24px;
 }
 
@@ -23,7 +23,7 @@
   width: min(42vw, 520px);
   height: min(42vw, 520px);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 225, 101, 0.4) 0%, rgba(255, 225, 101, 0.05) 62%, transparent 74%);
+  background: radial-gradient(circle, rgba(230, 228, 224, 0.4) 0%, rgba(255, 225, 101, 0.05) 62%, transparent 74%);
 }
 
 .etr-login-bg-dark {
@@ -44,7 +44,10 @@
   min-height: 650px;
   border: 1px solid rgba(157, 191, 236, 0.45);
   border-radius: 32px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(241, 248, 255, 0.99) 100%);
+  background:
+    radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
+    radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
+    linear-gradient(145deg, #3158d87a 0%, #0b2137 58%, #b0b5e486 100%);
   box-shadow: 0 24px 70px rgba(8, 27, 52, 0.2);
   overflow: hidden;
 }
@@ -58,7 +61,7 @@
 
 .etr-showcase-title {
   margin: 0 0 26px;
-  color: #0e4f8f;
+  color: #ffffff;
   font-size: clamp(1.3rem, 1.4vw + 0.95rem, 2rem);
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -68,12 +71,11 @@
 .etr-logo-shell {
   position: relative;
   padding: 28px;
-  border: 1px solid rgba(53, 128, 215, 0.28);
+  border: 1px solid rgba(245, 247, 248, 0.28);
   border-radius: 28px;
-  background:
-    radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
-    radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
-    linear-gradient(145deg, #06111f 0%, #0b2137 58%, #123e73 100%);
+  background: rgba(255, 255, 255, 0.06);
+border: 1px solid rgba(255, 255, 255, 0.18);
+backdrop-filter: blur(30px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 18px 36px rgba(7, 22, 39, 0.16);
@@ -115,7 +117,7 @@
   height: 575px;
   justify-self: center;
   align-self: center;
-  background: linear-gradient(180deg, rgba(21, 95, 184, 0.02), rgba(45, 108, 175, 0.28), rgba(21, 95, 184, 0.02));
+  background: linear-gradient(180deg, rgba(21, 95, 184, 0.02), rgba(209, 227, 243, 0.28), rgba(21, 95, 184, 0.02));
   transform: translateX(-30px);
 }
 
@@ -135,8 +137,8 @@
 .etr-login-form h2 {
   margin: 0 0 30px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #2d6caf;
-  color: #0d1116;
+  border-bottom: 1px solid #ffffff;
+  color: #f7f7f7;
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -212,7 +214,7 @@
 }
 
 .etr-login-links a {
-  color: #155fb8;
+  color: #f1f4f8;
   text-decoration: none;
 }
 
@@ -245,7 +247,10 @@
 
   .etr-login-card {
     grid-template-columns: 1fr;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(241, 248, 255, 0.99) 100%);
+    background:
+      radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
+      radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
+      linear-gradient(145deg, #06111f 0%, #0b2137 58%, #123e73 100%);
   }
 
   .etr-login-divider {
@@ -293,3 +298,4 @@
     align-items: flex-start;
   }
 }
+
