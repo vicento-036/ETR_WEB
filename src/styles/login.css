@@ -48,7 +48,7 @@
     radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
     radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
     linear-gradient(145deg, #3158d87a 0%, #0b2137 58%, #b0b5e486 100%);
-  box-shadow: 0 24px 70px rgba(8, 27, 52, 0.2);
+ 
   overflow: hidden;
 }
 
@@ -60,6 +60,7 @@
 }
 
 .etr-showcase-title {
+  text-align: center;
   margin: 0 0 26px;
   color: #ffffff;
   font-size: clamp(1.3rem, 1.4vw + 0.95rem, 2rem);
@@ -178,6 +179,40 @@ backdrop-filter: blur(30px);
   border-color: #1d83ff;
   box-shadow: 0 0 0 4px rgba(29, 131, 255, 0.14);
   transform: translateY(-1px);
+}
+
+.etr-password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.etr-password-wrapper .etr-form-input {
+  padding-right: 48px;
+}
+
+.etr-password-toggle {
+  position: absolute;
+  right: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 160ms ease;
+  color: #627187;
+}
+
+.etr-password-toggle:hover {
+  opacity: 0.7;
+}
+
+.etr-password-toggle:active {
+  opacity: 0.5;
 }
 
 .etr-signin-button {
