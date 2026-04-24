@@ -7,42 +7,21 @@
 npm install
 ```
 
-2. Build the React app:
-```bash
-npm run build
-```
-
-3. Start the server:
-```bash
-npm start
-```
-
-The app will be available at `http://localhost:3000`
-
-## Development
-
-For development with hot reload:
+2. Start the React development server:
 ```bash
 npm run dev
 ```
 
-This will start the React development server on port 3000.
+The app will be available at `http://localhost:3000`
 
-## Folder Structure
+## Build
 
-- `src/` - React source files
-  - `components/` - React components
-    - `Login.jsx` - Login form component
-  - `App.js` - Main App component
-  - `index.js` - React entry point
-- `public/` - Static assets
-- `build/` - Production build (created after running `npm run build`)
-- `server.js` - Express server
-- `index.html` - React HTML template
+```bash
+npm run build
+```
 
-## Features
+## Notes
 
-- React-based login form with state management
-- Express backend API for authentication
-- MSSQL database integration
-- Clean, responsive UI
+- This project is a Vite + React UI.
+- Authentication and database access are handled by the `Etris_WebAPI` backend.
+- Run the WebAPI at the same time so the UI can call `/api/login` and `/api/health`.

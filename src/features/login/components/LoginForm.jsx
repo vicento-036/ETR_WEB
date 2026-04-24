@@ -1,15 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
 
 function LoginForm() {
-  const [username, setUsername] = useState('Marcvincent@gmail.com');
-  const [password, setPassword] = useState('password123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isTokenExpired()) {
+      clearAuth();
+    }
+
+    let isMounted = true;
+
+    const checkHealth = async () => {
+      try {
+        await fetch('/api/health');
+      } catch {
+        if (isMounted) {
+          setMessage('Unable to reach the server.');
+        }
+      }
+    };
+
+    checkHealth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogin = async (event) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setMessage('');
 
     try {
-      const res = await fetch('http://localhost:3000/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -18,14 +46,24 @@ function LoginForm() {
         }),
       });
 
-      const text = await res.text();
-      setMessage(text);
+      const data = await response.json().catch(() => ({}));
 
-      if (res.ok) {
-        alert('Login successful!');
+      if (!response.ok) {
+        if (data?.errors) {
+          const fieldErrors = Object.values(data.errors).flat().join(' ');
+          setMessage(fieldErrors || data.message || 'Login failed.');
+        } else {
+          setMessage(data.message || 'Login failed.');
+        }
+
+        return;
       }
+
+      saveAuth(data);
     } catch (error) {
       setMessage(`Error: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -53,8 +91,8 @@ function LoginForm() {
         />
       </label>
 
-      <button type="submit" className="etr-signin-button">
-        Sign In
+      <button type="submit" className="etr-signin-button" disabled={isSubmitting}>
+        {isSubmitting ? 'Signing In...' : 'Sign In'}
       </button>
 
       <div className="etr-login-links">

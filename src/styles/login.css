@@ -149,6 +149,40 @@
   margin-bottom: 18px;
 }
 
+.etr-password-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.etr-password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  color: #627187;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  transition: color 160ms ease;
+}
+
+.etr-password-toggle:hover {
+  color: #1d83ff;
+}
+
+.etr-password-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
 .etr-input-label {
   position: absolute;
   top: 10px;
@@ -173,6 +207,10 @@
   line-height: 1.2;
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.etr-password-container .etr-form-input {
+  padding-right: 44px;
 }
 
 .etr-form-input:focus {
