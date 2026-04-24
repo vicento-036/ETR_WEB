@@ -10,7 +10,7 @@ function LoginLayout() {
 
       <section className="etr-login-card">
         <div className="etr-login-showcase">
-          <h1 className="etr-showcase-title">ETR TOTAL BUSINESS SUITE</h1>
+          <h1 className="etr-showcase-title">ETR INTEGRATED SYSTEM</h1>
           <div className="etr-logo-shell">
             <img src={etrLogo} alt="ETR total business solutions provider" className="etr-showcase-logo" />
           </div>
