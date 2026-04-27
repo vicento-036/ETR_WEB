@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 
-function LoginForm() {
+function LoginForm({ onLoginSuccess }) {
   const [username, setUsername] = useState('Marcvincent@gmail.com');
   const [password, setPassword] = useState('password123');
   const [message, setMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLogin = async (event) => {
     event.preventDefault();
+    setMessage('');
+    setIsSubmitting(true);
 
     try {
-      const res = await fetch('http://localhost:3000/login', {
+      const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -23,11 +26,18 @@ function LoginForm() {
       setMessage(text);
 
       if (res.ok) {
-        alert('Login successful!');
+        onLoginSuccess?.({ username });
       }
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage('Hindi ma-reach ang login server. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang backend sa port 3000.');
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const handlePreviewDashboard = () => {
+    setMessage('');
+    onLoginSuccess?.({ username: username || 'Executive Service Account' });
   };
 
   return (
@@ -74,8 +84,12 @@ function LoginForm() {
         </div>
       </label>
 
-      <button type="submit" className="etr-signin-button">
-        Sign In
+      <button type="submit" className="etr-signin-button" disabled={isSubmitting}>
+        {isSubmitting ? 'Signing In...' : 'Sign In'}
+      </button>
+
+      <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
+        Preview Dashboard
       </button>
 
       <div className="etr-login-links">

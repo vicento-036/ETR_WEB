@@ -2,7 +2,7 @@ import React from 'react';
 import etrLogo from '../../../assets/branding/etr-logo.png';
 import LoginForm from './LoginForm';
 
-function LoginLayout() {
+function LoginLayout({ onLoginSuccess }) {
   return (
     <main className="etr-login-page">
       <div className="etr-login-bg etr-login-bg-light" />
@@ -19,7 +19,7 @@ function LoginLayout() {
         <div className="etr-login-divider" />
 
         <div className="etr-login-form-panel">
-          <LoginForm />
+          <LoginForm onLoginSuccess={onLoginSuccess} />
         </div>
       </section>
     </main>
