@@ -38,7 +38,7 @@ function LoginForm({ onLoginSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/login', {
+      const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -63,7 +63,7 @@ function LoginForm({ onLoginSuccess }) {
       saveAuth(data);
       onLoginSuccess?.(data.user ?? { username });
     } catch (error) {
-      setMessage('Hindi ma-reach ang login server. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang backend sa port 3000.');
+      setMessage('Hindi ma-reach ang WebAPI. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang ASP.NET WebAPI sa http://localhost:5074.');
     } finally {
       setIsSubmitting(false);
     }
