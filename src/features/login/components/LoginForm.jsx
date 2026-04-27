@@ -1,11 +1,36 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
 
 function LoginForm({ onLoginSuccess }) {
   const [username, setUsername] = useState('Marcvincent@gmail.com');
   const [password, setPassword] = useState('password123');
   const [message, setMessage] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (isTokenExpired()) {
+      clearAuth();
+    }
+
+    let isMounted = true;
+
+    const checkHealth = async () => {
+      try {
+        await fetch('/api/health');
+      } catch {
+        if (isMounted) {
+          setMessage('Unable to reach the server.');
+        }
+      }
+    };
+
+    checkHealth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -22,12 +47,21 @@ function LoginForm({ onLoginSuccess }) {
         }),
       });
 
-      const text = await res.text();
-      setMessage(text);
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        onLoginSuccess?.({ username });
+      if (!res.ok) {
+        if (data?.errors) {
+          const fieldErrors = Object.values(data.errors).flat().join(' ');
+          setMessage(fieldErrors || data.message || 'Login failed.');
+        } else {
+          setMessage(data.message || 'Login failed.');
+        }
+
+        return;
       }
+
+      saveAuth(data);
+      onLoginSuccess?.(data.user ?? { username });
     } catch (error) {
       setMessage('Hindi ma-reach ang login server. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang backend sa port 3000.');
     } finally {
@@ -66,7 +100,7 @@ function LoginForm({ onLoginSuccess }) {
           <button
             type="button"
             className="etr-password-toggle"
-            onClick={() => setShowPassword(!showPassword)}
+            onClick={() => setShowPassword((current) => !current)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? (
