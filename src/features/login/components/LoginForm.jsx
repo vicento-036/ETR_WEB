@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
 
 function LoginForm({ onLoginSuccess }) {
-  const [username, setUsername] = useState('Marcvincent@gmail.com');
-  const [password, setPassword] = useState('password123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -127,8 +127,8 @@ function LoginForm({ onLoginSuccess }) {
       </button>
 
       <div className="etr-login-links">
-        <a href="/">Forgot your password?</a>
-        <a href="/">Sign Up</a>
+        <a href="/"></a>
+        <a href="/"></a>
       </div>
 
       {message ? <p className="etr-login-message">{message}</p> : null}

@@ -7,13 +7,34 @@
 
 .etr-dashboard-topbar {
   display: grid;
-  grid-template-columns: auto minmax(320px, 560px) auto;
+  grid-template-columns: 44px auto minmax(320px, 560px) auto;
   align-items: center;
-  gap: 24px;
+  gap: 18px;
   height: 58px;
-  padding: 0 16px 0 28px;
+  padding: 0 16px 0 18px;
   background: #165ea4;
   color: #ffffff;
+}
+
+.etr-dashboard-menu-button {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.etr-dashboard-menu-button span {
+  display: block;
+  width: 28px;
+  height: 3px;
+  border-radius: 999px;
+  background: #ffffff;
 }
 
 .etr-dashboard-brand {
@@ -21,6 +42,7 @@
   font-weight: 700;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  margin-left: 2px;
 }
 
 .etr-dashboard-search {
@@ -256,22 +278,45 @@
   justify-content: center;
   min-width: 28px;
   min-height: 28px;
-  font-size: 20px;
-  line-height: 1;
   flex-shrink: 0;
 }
 
 .etr-dashboard-root-button .etr-dashboard-item-arrow {
   min-width: 34px;
   min-height: 34px;
-  font-size: 26px;
 }
 
 .etr-dashboard-section-toggle .etr-dashboard-item-arrow,
 .etr-dashboard-child-button.has-children .etr-dashboard-item-arrow {
   min-width: 30px;
   min-height: 30px;
-  font-size: 20px;
+}
+
+.etr-chevron-icon {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  transition: transform 160ms ease;
+}
+
+.etr-chevron-icon.is-open {
+  transform: rotate(90deg);
+}
+
+.etr-dashboard-root-button .etr-chevron-icon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 3.2;
+}
+
+.etr-dashboard-section-toggle .etr-chevron-icon,
+.etr-dashboard-child-button.has-children .etr-chevron-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .etr-dashboard-resizer {
@@ -307,7 +352,7 @@
 
 @media (max-width: 900px) {
   .etr-dashboard-topbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: 44px 1fr;
     height: auto;
     padding: 10px 12px;
   }
@@ -317,7 +362,13 @@
   }
 
   .etr-dashboard-search {
+    grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .etr-dashboard-account-wrap {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 
   .etr-dashboard-shell {
@@ -332,12 +383,5 @@
 
   .etr-dashboard-resizer {
     display: none;
-  }
-
-  .etr-dashboard-toolbar {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    height: auto;
-    padding: 8px 12px;
   }
 }
