@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
 
-function LoginForm() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+function LoginForm({ onLoginSuccess }) {
+  const [username, setUsername] = useState('Marcvincent@gmail.com');
+  const [password, setPassword] = useState('password123');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -34,11 +34,11 @@ function LoginForm() {
 
   const handleLogin = async (event) => {
     event.preventDefault();
-    setIsSubmitting(true);
     setMessage('');
+    setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/login', {
+      const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -47,9 +47,9 @@ function LoginForm() {
         }),
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
+      if (!res.ok) {
         if (data?.errors) {
           const fieldErrors = Object.values(data.errors).flat().join(' ');
           setMessage(fieldErrors || data.message || 'Login failed.');
@@ -61,11 +61,22 @@ function LoginForm() {
       }
 
       saveAuth(data);
+      onLoginSuccess?.({ username });
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
+      setMessage('Hindi ma-reach ang login server. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang backend sa port 3000.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handlePreviewDashboard = () => {
+    setMessage('');
+    onLoginSuccess?.({ username: username || 'Executive Service Account' });
+  };
+
+  const handlePreviewDashboard = () => {
+    setMessage('');
+    onLoginSuccess?.({ username: username || 'Executive Service Account' });
   };
 
   return (
@@ -114,16 +125,20 @@ function LoginForm() {
 
       <button type="submit" className="etr-signin-button" disabled={isSubmitting}>
         {isSubmitting ? 'Signing In...' : 'Sign In'}
+<<<<<<< HEAD
+=======
+      </button>
+
+      <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
+        Preview Dashboard
+>>>>>>> adding-dashboard
       </button>
 
       <div className="etr-login-links">
         <a href="/">Forgot your password?</a>
-        <a href="/">Sign Up</a>
-      </div>
+      </button>
 
-      {message ? <p className="etr-login-message">{message}</p> : null}
-    </form>
-  );
-}
+      <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
+        Preview D
 
 export default LoginForm;
