@@ -26,7 +26,7 @@ function LoginForm({ onLoginSuccess }) {
     };
 
     checkHealth();
-        
+
     return () => {
       isMounted = false;
     };
@@ -61,17 +61,12 @@ function LoginForm({ onLoginSuccess }) {
       }
 
       saveAuth(data);
-      onLoginSuccess?.({ username });
+      onLoginSuccess?.(data.user ?? { username });
     } catch (error) {
       setMessage('Hindi ma-reach ang login server. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang backend sa port 3000.');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handlePreviewDashboard = () => {
-    setMessage('');
-    onLoginSuccess?.({ username: username || 'Executive Service Account' });
   };
 
   const handlePreviewDashboard = () => {
@@ -105,7 +100,7 @@ function LoginForm({ onLoginSuccess }) {
           <button
             type="button"
             className="etr-password-toggle"
-            onClick={() => setShowPassword(!showPassword)}
+            onClick={() => setShowPassword((current) => !current)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? (
@@ -125,20 +120,20 @@ function LoginForm({ onLoginSuccess }) {
 
       <button type="submit" className="etr-signin-button" disabled={isSubmitting}>
         {isSubmitting ? 'Signing In...' : 'Sign In'}
-<<<<<<< HEAD
-=======
       </button>
 
       <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
         Preview Dashboard
->>>>>>> adding-dashboard
       </button>
 
       <div className="etr-login-links">
         <a href="/">Forgot your password?</a>
-      </button>
+        <a href="/">Sign Up</a>
+      </div>
 
-      <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
-        Preview D
+      {message ? <p className="etr-login-message">{message}</p> : null}
+    </form>
+  );
+}
 
 export default LoginForm;
