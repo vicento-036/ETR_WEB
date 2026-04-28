@@ -3,6 +3,12 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import { clearAuth, getToken } from './services/authStorage';
 
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+function buildApiUrl(path) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
 function App() {
   const [sessionUser, setSessionUser] = useState(null);
 
@@ -11,7 +17,7 @@ function App() {
 
     try {
       if (token) {
-        await fetch('/api/login/logout', {
+        await fetch(buildApiUrl('/api/login/logout'), {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -34,3 +40,5 @@ function App() {
 }
 
 export default App;
+
+

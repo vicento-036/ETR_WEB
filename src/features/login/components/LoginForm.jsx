@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
 
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+function buildApiUrl(path) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
 function LoginForm({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +23,7 @@ function LoginForm({ onLoginSuccess }) {
 
     const checkHealth = async () => {
       try {
-        await fetch('/api/health');
+        await fetch(buildApiUrl('/api/health'));
       } catch {
         if (isMounted) {
           setMessage('Unable to reach the server.');
@@ -38,7 +44,7 @@ function LoginForm({ onLoginSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(buildApiUrl('/api/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -137,3 +143,5 @@ function LoginForm({ onLoginSuccess }) {
 }
 
 export default LoginForm;
+
+
