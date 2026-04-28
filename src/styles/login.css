@@ -1,4 +1,11 @@
 .etr-login-page {
+  --etr-login-navy-strong: #0a2745;
+  --etr-login-navy: #123e6d;
+  --etr-login-cobalt: #1b5a96;
+  --etr-login-cyan-soft: #d7e8f8;
+  --etr-login-cyan-surface: #edf5fc;
+  --etr-login-ink: #16324c;
+  --etr-login-ink-soft: #56708c;
   position: relative;
   display: flex;
   align-items: center;
@@ -6,9 +13,9 @@
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(255, 231, 108, 0.3), transparent 28%),
-    radial-gradient(circle at top right, rgba(236, 239, 243, 0.945), transparent 34%),
-    linear-gradient(135deg, #f7f8f8 0%, #c9daeb 46%, #dce2e9 100%);
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 24%),
+    radial-gradient(circle at top right, rgba(113, 181, 255, 0.22), transparent 26%),
+    linear-gradient(180deg, #d8e9f8 0%, #eef5fb 100%);
   padding: 48px 24px;
 }
 
@@ -23,7 +30,7 @@
   width: min(42vw, 520px);
   height: min(42vw, 520px);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(230, 228, 224, 0.4) 0%, rgba(255, 225, 101, 0.05) 62%, transparent 74%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 62%, transparent 74%);
 }
 
 .etr-login-bg-dark {
@@ -31,7 +38,7 @@
   width: min(58vw, 860px);
   height: min(58vw, 860px);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(31, 144, 255, 0.36) 0%, rgba(31, 144, 255, 0.08) 52%, transparent 72%);
+  background: radial-gradient(circle, rgba(27, 90, 150, 0.28) 0%, rgba(27, 90, 150, 0.08) 52%, transparent 72%);
 }
 
 .etr-login-card {
@@ -45,9 +52,9 @@
   border: 1px solid rgba(157, 191, 236, 0.45);
   border-radius: 32px;
   background:
-    radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
-    radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
-    linear-gradient(145deg, #3158d87a 0%, #0b2137 58%, #b0b5e486 100%);
+    radial-gradient(circle at 18% 24%, rgba(255, 255, 255, 0.08), transparent 24%),
+    radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.14), transparent 28%),
+    linear-gradient(145deg, rgba(24, 78, 128, 0.85) 0%, var(--etr-login-navy-strong) 58%, rgba(122, 170, 214, 0.66) 100%);
  
   overflow: hidden;
 }
@@ -56,7 +63,7 @@
   width: 100%;
   max-width: 100%;
   padding: 66px 58px 84px 66px;
-  color: #103458;
+  color: var(--etr-login-ink);
 }
 
 .etr-showcase-title {
@@ -72,11 +79,10 @@
 .etr-logo-shell {
   position: relative;
   padding: 28px;
-  border: 1px solid rgba(245, 247, 248, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 28px;
-  background: rgb(255, 255, 255);
-border: 1px solid rgb(255, 255, 255);
-backdrop-filter: blur(30px);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(30px);
   overflow: hidden;
 }
 
@@ -115,7 +121,7 @@ backdrop-filter: blur(30px);
   height: 575px;
   justify-self: center;
   align-self: center;
-  background: linear-gradient(180deg, rgba(21, 95, 184, 0.02), rgba(209, 227, 243, 0.28), rgba(21, 95, 184, 0.02));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(215, 232, 248, 0.26), rgba(255, 255, 255, 0.02));
   transform: translateX(-30px);
 }
 
@@ -135,8 +141,8 @@ backdrop-filter: blur(30px);
 .etr-login-form h2 {
   margin: 0 0 30px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #ffffff;
-  color: #f7f7f7;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.74);
+  color: #f7fbff;
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -154,7 +160,7 @@ backdrop-filter: blur(30px);
   top: 10px;
   left: 12px;
   z-index: 1;
-  color: #627187;
+  color: #6f88a3;
   font-size: 0.78rem;
   line-height: 1;
   pointer-events: none;
@@ -163,9 +169,9 @@ backdrop-filter: blur(30px);
 .etr-form-input {
   width: 100%;
   height: 56px;
-  border: 1px solid #a9c5ea;
+  border: 1px solid #b7cfe8;
   border-radius: 14px;
-  background: linear-gradient(180deg, #edf5ff 0%, #dbeaff 100%);
+  background: linear-gradient(180deg, #f0f7fd 0%, #dfeffc 100%);
   padding: 24px 14px 8px;
   color: #16253b;
   font-size: 0.88rem;
@@ -176,8 +182,8 @@ backdrop-filter: blur(30px);
 }
 
 .etr-form-input:focus {
-  border-color: #1d83ff;
-  box-shadow: 0 0 0 4px rgba(29, 131, 255, 0.14);
+  border-color: #2f80c3;
+  box-shadow: 0 0 0 4px rgba(47, 128, 195, 0.14);
   transform: translateY(-1px);
 }
 
@@ -204,7 +210,7 @@ backdrop-filter: blur(30px);
   align-items: center;
   justify-content: center;
   transition: opacity 160ms ease;
-  color: #627187;
+  color: #6f88a3;
 }
 
 .etr-password-toggle:hover {
@@ -221,13 +227,13 @@ backdrop-filter: blur(30px);
   margin: 16px 0 20px;
   border: 0;
   border-radius: 14px;
-  background: linear-gradient(90deg, #0f71ec 0%, #1d8dff 64%, #2576ff 100%);
+  background: linear-gradient(90deg, var(--etr-login-navy) 0%, var(--etr-login-cobalt) 64%, #2f80c3 100%);
   color: #ffffff;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
-  box-shadow: 0 14px 28px rgba(248, 248, 248, 0.22);
+  box-shadow: 0 14px 28px rgba(10, 39, 69, 0.22);
   transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
 
@@ -237,18 +243,18 @@ backdrop-filter: blur(30px);
 }
 
 .etr-signin-button:hover {
-  filter: brightness(1.04);
+  filter: brightness(1.03);
   transform: translateY(-1px);
-  box-shadow: 0 18px 32px rgba(20, 95, 185, 0.28);
+  box-shadow: 0 18px 32px rgba(18, 62, 109, 0.28);
 }
 
 .etr-preview-button {
   width: 100%;
   height: 42px;
   margin: -6px 0 20px;
-  border: 1px solid rgba(255, 255, 255, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
   font-size: 0.92rem;
   font-weight: 600;
@@ -257,7 +263,7 @@ backdrop-filter: blur(30px);
 }
 
 .etr-preview-button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
   transform: translateY(-1px);
 }
 
@@ -305,9 +311,9 @@ backdrop-filter: blur(30px);
   .etr-login-card {
     grid-template-columns: 1fr;
     background:
-      radial-gradient(circle at 18% 24%, rgba(255, 228, 102, 0.18), transparent 24%),
-      radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.18), transparent 28%),
-      linear-gradient(145deg, #06111f 0%, #0b2137 58%, #123e73 100%);
+      radial-gradient(circle at 18% 24%, rgba(255, 255, 255, 0.08), transparent 24%),
+      radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.14), transparent 28%),
+      linear-gradient(145deg, #0a2745 0%, #123e6d 58%, #2f80c3 100%);
   }
 
   .etr-login-divider {
@@ -333,7 +339,7 @@ backdrop-filter: blur(30px);
   }
 
   .etr-login-page {
-    background: linear-gradient(180deg, #07131f 0%, #145fb9 100%);
+    background: linear-gradient(180deg, #d8e9f8 0%, #eef5fb 100%);
   }
 
   .etr-login-card {

@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { clearAuth, isTokenExpired, saveAuth } from '../../../services/authStorage';
+import {
+  clearAuth,
+  isTokenExpired,
+  saveAuth,
+} from '../../../services/authStorage';
 
 function LoginForm({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -79,7 +83,7 @@ function LoginForm({ onLoginSuccess }) {
       <h2>SIGN IN</h2>
 
       <label className="etr-input-box">
-        <span className="etr-input-label">Email Address</span>
+        <span className="etr-input-label">username</span>
         <input
           className="etr-form-input"
           type="text"
