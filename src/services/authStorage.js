@@ -1,19 +1,20 @@
 const ACCESS_TOKEN_KEY = 'etris.accessToken';
 const USER_KEY = 'etris.user';
 const EXPIRES_AT_KEY = 'etris.expiresAt';
+const storage = typeof window !== 'undefined' ? window.localStorage : null;
 
 export function saveAuth(data) {
-  sessionStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken ?? '');
-  sessionStorage.setItem(USER_KEY, JSON.stringify(data.user ?? null));
-  sessionStorage.setItem(EXPIRES_AT_KEY, data.expiresAt ?? '');
+  storage?.setItem(ACCESS_TOKEN_KEY, data.accessToken ?? '');
+  storage?.setItem(USER_KEY, JSON.stringify(data.user ?? null));
+  storage?.setItem(EXPIRES_AT_KEY, data.expiresAt ?? '');
 }
 
 export function getToken() {
-  return sessionStorage.getItem(ACCESS_TOKEN_KEY);
+  return storage?.getItem(ACCESS_TOKEN_KEY) ?? null;
 }
 
 export function getUser() {
-  const rawUser = sessionStorage.getItem(USER_KEY);
+  const rawUser = storage?.getItem(USER_KEY);
 
   if (!rawUser) {
     return null;
@@ -28,7 +29,7 @@ export function getUser() {
 }
 
 export function getExpiresAt() {
-  return sessionStorage.getItem(EXPIRES_AT_KEY);
+  return storage?.getItem(EXPIRES_AT_KEY) ?? null;
 }
 
 export function isTokenExpired() {
@@ -42,7 +43,7 @@ export function isTokenExpired() {
 }
 
 export function clearAuth() {
-  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-  sessionStorage.removeItem(USER_KEY);
-  sessionStorage.removeItem(EXPIRES_AT_KEY);
+  storage?.removeItem(ACCESS_TOKEN_KEY);
+  storage?.removeItem(USER_KEY);
+  storage?.removeItem(EXPIRES_AT_KEY);
 }
