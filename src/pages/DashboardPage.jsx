@@ -108,6 +108,29 @@ function getUserInitials(name) {
   return parts.map((part) => part[0].toUpperCase()).join('') || 'ES';
 }
 
+function getUserDisplayName(user) {
+  if (!user) {
+    return 'Executive Service Account';
+  }
+
+  const lastName = user.lastName || user.lastname || user.LastName || user.LASTNAME || '';
+  const firstName = user.firstName || user.firstname || user.FirstName || user.FIRSTNAME || '';
+
+  if (lastName && firstName) {
+    return `${lastName}, ${firstName}`;
+  }
+
+  if (lastName) {
+    return lastName;
+  }
+
+  if (firstName) {
+    return firstName;
+  }
+
+  return user.username || 'Executive Service Account';
+}
+
 function DashboardNode({ item, level, openItems, onToggle }) {
   const hasChildren = Array.isArray(item.children) && item.children.length > 0;
   const isOpen = !!openItems[item.id];
@@ -165,8 +188,8 @@ function DashboardPage({ user, onLogout }) {
     startX: 0,
     startWidth: 398,
   });
-  const username = user?.username || 'Executive Service Account';
-  const userInitials = getUserInitials(username);
+  const displayName = getUserDisplayName(user);
+  const userInitials = getUserInitials(displayName);
 
   const toggleSection = (sectionId) => {
     setOpenSections((current) => ({
@@ -246,8 +269,7 @@ function DashboardPage({ user, onLogout }) {
         <div className="etr-dashboard-account-wrap">
           <div className="etr-dashboard-avatar">{userInitials}</div>
           <div className="etr-dashboard-account">
-            <strong>{username}</strong>
-            <span>System Dashboard</span>
+            <strong>{displayName}</strong>
           </div>
           <button type="button" className="etr-dashboard-logout" onClick={onLogout}>
             Logout
