@@ -21,6 +21,7 @@ function getStoredUser() {
 
 function App() {
   const [sessionUser, setSessionUser] = useState(getStoredUser);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   useEffect(() => {
     document.title = 'ETR-WEB';
@@ -36,7 +37,7 @@ function App() {
     favicon.setAttribute('href', appLogo);
   }, []);
 
-  const handleLogout = async () => {
+  const confirmLogout = async () => {
     const token = getToken();
 
     try {
@@ -51,13 +52,35 @@ function App() {
     } catch {
       // Local logout should still succeed even if the API is unavailable.
     } finally {
+      setIsLogoutConfirmOpen(false);
       clearAuth();
       setSessionUser(null);
     }
   };
 
   if (sessionUser) {
-    return <DashboardPage user={sessionUser} onLogout={handleLogout} />;
+    return (
+      <>
+        <DashboardPage user={sessionUser} onLogout={() => setIsLogoutConfirmOpen(true)} />
+
+        {isLogoutConfirmOpen ? (
+          <div className="etr-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+            <div className="etr-confirm-modal">
+              <h2 id="logout-confirm-title">Confirm Logout</h2>
+              <p>Are you sure you want to log out?</p>
+              <div className="etr-confirm-actions">
+                <button type="button" className="etr-confirm-secondary" onClick={() => setIsLogoutConfirmOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="etr-confirm-primary" onClick={confirmLogout}>
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
   }
 
   return <LoginPage onLoginSuccess={setSessionUser} />;

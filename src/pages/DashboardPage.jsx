@@ -94,6 +94,20 @@ function ChevronIcon({ isOpen }) {
   );
 }
 
+function getUserInitials(name) {
+  if (!name) {
+    return 'ES';
+  }
+
+  const parts = name
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  return parts.map((part) => part[0].toUpperCase()).join('') || 'ES';
+}
+
 function DashboardNode({ item, level, openItems, onToggle }) {
   const hasChildren = Array.isArray(item.children) && item.children.length > 0;
   const isOpen = !!openItems[item.id];
@@ -139,7 +153,7 @@ function DashboardNode({ item, level, openItems, onToggle }) {
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
   const [openSections, setOpenSections] = useState({
-    sales: true,
+    sales: false,
     logistics: false,
     inventory: false,
     finance: false,
@@ -151,6 +165,8 @@ function DashboardPage({ user, onLogout }) {
     startX: 0,
     startWidth: 398,
   });
+  const username = user?.username || 'Executive Service Account';
+  const userInitials = getUserInitials(username);
 
   const toggleSection = (sectionId) => {
     setOpenSections((current) => ({
@@ -218,19 +234,20 @@ function DashboardPage({ user, onLogout }) {
           <span />
         </button>
 
-        <div className="etr-dashboard-brand">Masigasig Sales Portal</div>
+        <div className="etr-dashboard-brand">ETRIS INTEGRATED SYSTEM</div>
 
         <label className="etr-dashboard-search">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm0-2a8 8 0 1 0 4.9 14.3l4.4 4.4 1.4-1.4-4.4-4.4A8 8 0 0 0 10 2Z" />
           </svg>
-          <input type="text" placeholder="Search" />
+          <input type="text" placeholder="Search module, document, or transaction" />
         </label>
 
         <div className="etr-dashboard-account-wrap">
-          <div className="etr-dashboard-avatar">ES</div>
+          <div className="etr-dashboard-avatar">{userInitials}</div>
           <div className="etr-dashboard-account">
-            <strong>{user?.username || 'Executive Service Account'}</strong>
+            <strong>{username}</strong>
+            <span>System Dashboard</span>
           </div>
           <button type="button" className="etr-dashboard-logout" onClick={onLogout}>
             Logout
@@ -283,7 +300,7 @@ function DashboardPage({ user, onLogout }) {
 
         <section className="etr-dashboard-main">
           <div className="etr-dashboard-canvas">
-            <div className="etr-dashboard-scroll-space" />
+            <div className="etr-dashboard-content" />
           </div>
         </section>
       </div>
