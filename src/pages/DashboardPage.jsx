@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ExpenseEntryView from '../features/expenses/ExpenseEntry';
 
 const sidebarSections = [
   {
@@ -131,16 +132,31 @@ function getUserDisplayName(user) {
   return user.username || 'Executive Service Account';
 }
 
-function DashboardNode({ item, level, openItems, onToggle }) {
+function DashboardContent({ activeItemId, user }) {
+  if (activeItemId === 'expense-entry') {
+    return <ExpenseEntryView user={user} />;
+  }
+
+  return (
+    <div className="etr-dashboard-empty-state">
+      <p className="etr-expense-kicker">Module Workspace</p>
+      <h1>Select a transaction from the sidebar</h1>
+      <span>Finance Expense Entry is ready with the DailyExpense table.</span>
+    </div>
+  );
+}
+
+function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelect }) {
   const hasChildren = Array.isArray(item.children) && item.children.length > 0;
   const isOpen = !!openItems[item.id];
+  const isActive = activeItemId === item.id;
 
   return (
     <li className={`etr-dashboard-node level-${level}`}>
       <button
         type="button"
-        className={`etr-dashboard-child-button ${hasChildren ? 'has-children' : 'is-leaf'} ${isOpen ? 'is-open' : ''}`}
-        onClick={() => hasChildren && onToggle(item.id)}
+        className={`etr-dashboard-child-button ${hasChildren ? 'has-children' : 'is-leaf'} ${isOpen ? 'is-open' : ''} ${isActive ? 'is-active' : ''}`}
+        onClick={() => (hasChildren ? onToggle(item.id) : onSelect(item.id))}
       >
         <span className="etr-dashboard-item-main">
           <span className="etr-dashboard-item-icon">
@@ -164,7 +180,9 @@ function DashboardNode({ item, level, openItems, onToggle }) {
               item={child}
               level={level + 1}
               openItems={openItems}
+              activeItemId={activeItemId}
               onToggle={onToggle}
+              onSelect={onSelect}
             />
           ))}
         </ul>
@@ -175,11 +193,12 @@ function DashboardNode({ item, level, openItems, onToggle }) {
 
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
+  const [activeItemId, setActiveItemId] = useState('expense-entry');
   const [openSections, setOpenSections] = useState({
     sales: false,
     logistics: false,
     inventory: false,
-    finance: false,
+    finance: true,
     analytics: false,
     'advanced-pricing': false,
   });
@@ -303,7 +322,9 @@ function DashboardPage({ user, onLogout }) {
                         item={item}
                         level={1}
                         openItems={openSections}
+                        activeItemId={activeItemId}
                         onToggle={toggleSection}
+                        onSelect={setActiveItemId}
                       />
                     ))}
                   </ul>
@@ -322,7 +343,9 @@ function DashboardPage({ user, onLogout }) {
 
         <section className="etr-dashboard-main">
           <div className="etr-dashboard-canvas">
-            <div className="etr-dashboard-content" />
+            <div className="etr-dashboard-content">
+              <DashboardContent activeItemId={activeItemId} user={user} />
+            </div>
           </div>
         </section>
       </div>
