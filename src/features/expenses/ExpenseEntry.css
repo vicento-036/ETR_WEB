@@ -59,10 +59,32 @@
   cursor: pointer;
 }
 
-.etr-expense-actions button:first-child {
+.etr-expense-actions .etr-expense-save-button {
   border-color: #165ea4;
   background: linear-gradient(180deg, #0f4f8e 0%, #0c4278 100%);
   color: #ffffff;
+}
+
+.etr-expense-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.etr-expense-save-message {
+  border: 1px solid rgba(39, 132, 78, 0.24);
+  border-radius: 8px;
+  background: #eefaf3;
+  color: #1d6b3d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 10px 12px;
+}
+
+.etr-expense-save-message.is-error {
+  border-color: rgba(180, 45, 45, 0.2);
+  background: #fff8f8;
+  color: #8d2c2c;
 }
 
 .etr-expense-table-wrap {

@@ -5,6 +5,7 @@ import './ExpenseEntry.css';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
+const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -102,7 +103,7 @@ const emptyExpenseForm = {
   referenceNo: '',
   receiptDate: '',
   expenseType: '',
-  expenseTypeCode: '',
+  expenseTypeId: '',
   tinNo: '',
   orSiNo: '',
   documentNo: '',
@@ -251,7 +252,7 @@ function normalizeAccountTitle(row) {
   }
 
   return {
-    accountTitleId: accountTitleId || code,
+    accountTitleId,
     code,
     description,
   };
@@ -264,15 +265,25 @@ function normalizeEmployee(row) {
 
   const employeeNo = getEmployeeNo(row);
   const employeeName = getEmployeeName(row);
+  const employeeId = getUserField(row, ['employeeId', 'employeeID', 'EmployeeID', 'EmployeeId', 'id', 'Id']);
 
   if (!employeeNo && !employeeName) {
     return null;
   }
 
   return {
+    employeeId,
     employeeNo,
     employeeName,
   };
+}
+
+function getValidationMessage(data) {
+  if (data?.errors) {
+    return Object.values(data.errors).flat().filter(Boolean).join(' ');
+  }
+
+  return data?.message || 'Unable to save daily expense.';
 }
 
 function getReferenceDateToken(isoDate) {
@@ -353,6 +364,9 @@ export default function ExpenseEntryView({ user }) {
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
   const [page, setPage] = useState(1);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const total = parseMoney(formData.amount) + parseMoney(formData.vat);
   const pageSize = 2;
   const totalPages = Math.max(1, Math.ceil(expenseRows.length / pageSize));
@@ -509,7 +523,7 @@ export default function ExpenseEntryView({ user }) {
     if (!formData.employeeName.trim()) nextErrors.employeeName = 'Employee name is required.';
     if (formData.employeeName && /[0-9]/.test(formData.employeeName)) nextErrors.employeeName = 'Employee name cannot contain numbers.';
     if (!formData.referenceNo.trim()) nextErrors.referenceNo = 'Reference no is required.';
-    if (!formData.expenseType.trim()) nextErrors.expenseType = 'Select an expense type.';
+    if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
@@ -518,47 +532,98 @@ export default function ExpenseEntryView({ user }) {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validateForm()) {
       return;
     }
 
-    const nextRow = {
-      employeeNo: formData.employeeNo.trim(),
-      employeeName: formData.employeeName.trim(),
-      date: formatDateForTable(formData.date),
-      referenceNo: formData.referenceNo.trim(),
-      receiptDate: formatDateForTable(formData.receiptDate),
-      expenseType: formData.expenseType,
-      tinNo: formData.tinNo.trim(),
-      orSiNo: formData.orSiNo.trim(),
-      documentNo: formData.documentNo.trim(),
-      description: formData.description.trim(),
-      amount: formatMoney(parseMoney(formData.amount)),
-      vat: formatMoney(parseMoney(formData.vat)),
-      total: formatMoney(total),
-      attachment: formData.attachment || 'No attachment',
-    };
+    const token = getToken();
+    setIsSaving(true);
+    setSaveMessage('');
+    setSaveError('');
 
-    const nextRows = [nextRow, ...expenseRows];
-    setExpenseRows(nextRows);
-    setPage(1);
-    setFormData(createExpenseForm(employeeInfo, nextRows, openedDateRef.current));
-    setErrors({});
-    setAttachmentPreview(null);
+    try {
+      const response = await fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          expenseDate: formData.date,
+          referenceNo: formData.referenceNo.trim(),
+          receiptDate: formData.receiptDate || null,
+          orSINo: formData.orSiNo.trim(),
+          documentNo: formData.documentNo.trim(),
+          description: formData.description.trim(),
+          amount: parseMoney(formData.amount),
+          vat: parseMoney(formData.vat),
+          total,
+          tin: formData.tinNo.trim(),
+          vendorID: null,
+          expenseType: Number(formData.expenseTypeId),
+          attachment: formData.attachment || '',
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(getValidationMessage(data));
+      }
+
+      const responseEmployeeNo = data.employeeNo || formData.employeeNo.trim();
+      const responseEmployeeName = data.employeeName || formData.employeeName.trim();
+
+      const nextRow = {
+        employeeNo: responseEmployeeNo,
+        employeeName: responseEmployeeName,
+        date: formatDateForTable(formData.date),
+        referenceNo: formData.referenceNo.trim(),
+        receiptDate: formatDateForTable(formData.receiptDate),
+        expenseType: formData.expenseType,
+        tinNo: formData.tinNo.trim(),
+        orSiNo: formData.orSiNo.trim(),
+        documentNo: formData.documentNo.trim(),
+        description: formData.description.trim(),
+        amount: formatMoney(parseMoney(formData.amount)),
+        vat: formatMoney(parseMoney(formData.vat)),
+        total: formatMoney(total),
+        attachment: formData.attachment || 'No attachment',
+      };
+
+      const nextRows = [nextRow, ...expenseRows];
+      setExpenseRows(nextRows);
+      setPage(1);
+      setFormData(createExpenseForm(employeeInfo, nextRows, openedDateRef.current));
+      setErrors({});
+      setAttachmentPreview(null);
+      setSaveMessage(data.message || 'Daily expense saved successfully.');
+    } catch (error) {
+      setSaveError(error.message || 'Unable to save daily expense.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleClear = () => {
     setFormData(createExpenseForm(employeeInfo, expenseRows, openedDateRef.current));
     setErrors({});
+    setSaveError('');
+    setSaveMessage('');
     setAttachmentPreview(null);
   };
 
   const handleSelectExpenseType = (row) => {
+    if (!row.accountTitleId) {
+      setErrors((current) => ({ ...current, expenseType: 'Selected account title has no AccountTitleID.' }));
+      return;
+    }
+
     setFormData((current) => ({
       ...current,
       expenseType: `${row.code} - ${row.description}`,
-      expenseTypeCode: row.code,
+      expenseTypeId: row.accountTitleId,
     }));
     setErrors((current) => ({ ...current, expenseType: '' }));
     setExpenseTypeQuery('');
@@ -594,11 +659,14 @@ export default function ExpenseEntryView({ user }) {
         </div>
 
         <div className="etr-expense-actions">
-          <button type="button" onClick={handleSave}>Save</button>
-          <button type="button" onClick={handleClear}>Clear</button>
-          <button type="button" onClick={handleClear}>New</button>
+          <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+          <button type="button" onClick={handleClear} disabled={isSaving}>Clear</button>
+          <button type="button" onClick={handleClear} disabled={isSaving}>New</button>
         </div>
       </div>
+
+      {saveMessage ? <div className="etr-expense-save-message">{saveMessage}</div> : null}
+      {saveError ? <div className="etr-expense-save-message is-error">{saveError}</div> : null}
 
       <div className="etr-expense-form-shell">
         <div className="etr-expense-main-stack">
