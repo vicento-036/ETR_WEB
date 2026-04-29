@@ -330,7 +330,6 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
     <label className={`etr-expense-field ${error ? 'has-error' : ''}`}>
       <span>
         {label}
-        {required ? <strong>*</strong> : null}
       </span>
       {children || (
         <input
@@ -746,7 +745,7 @@ export default function ExpenseEntryView({ user }) {
                 </div>
               </FormField>
               <label className={`etr-expense-field etr-expense-description ${errors.description ? 'has-error' : ''}`}>
-                <span>Particular/Description<strong>*</strong></span>
+                <span>Particular/Description</span>
                 <textarea name="description" value={formData.description} onChange={updateForm} rows="4" aria-invalid={!!errors.description} />
                 {errors.description ? <small>{errors.description}</small> : null}
               </label>
