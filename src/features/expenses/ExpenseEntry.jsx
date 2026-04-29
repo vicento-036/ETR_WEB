@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getToken } from '../../services/authStorage';
 import './ExpenseEntry.css';
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
+const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
+
+function buildApiUrl(path) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
 
 const dailyExpenseColumns = [
   'Employee No',
@@ -103,42 +112,6 @@ const emptyExpenseForm = {
   attachment: '',
 };
 
-const accountTitleRows = [
-  { accountTitleId: 1, code: '100-00-0000', description: 'ASSETS' },
-  { accountTitleId: 2, code: '101-00-0000', description: 'CURRENT ASSETS' },
-  { accountTitleId: 3, code: '101-10-0001', description: 'CASH ON HAND' },
-  { accountTitleId: 4, code: '101-10-0002', description: 'Petty Cash Fund' },
-  { accountTitleId: 5, code: '101-10-0003', description: 'Revolving Fund' },
-  { accountTitleId: 6, code: '101-10-0004', description: 'CASH IN BANK' },
-  { accountTitleId: 7, code: '101-10-0005', description: 'CASH IN BANK - ALLIED BANK' },
-  { accountTitleId: 8, code: '101-20-0000', description: 'ACCOUNTS RECEIVABLES & ADVANCES' },
-  { accountTitleId: 9, code: '101-20-0001', description: 'Accounts Receivable - Trade' },
-  { accountTitleId: 10, code: '101-20-0002', description: 'Allow for Doubtful Accounts - Trade' },
-  { accountTitleId: 11, code: '101-20-0003', description: 'Accounts Receivable - Guaranteed' },
-  { accountTitleId: 12, code: '101-20-0004', description: 'Accounts Receivable - Initial Stocking' },
-  { accountTitleId: 13, code: '101-20-0005', description: 'Accounts Receivable - NonTrade' },
-  { accountTitleId: 14, code: '101-20-0006', description: 'Allow for Doubtful Accounts - Non Trade' },
-  { accountTitleId: 15, code: '101-20-0007', description: 'Accounts Receivable - Employees' },
-  { accountTitleId: 16, code: '101-20-0008', description: 'Accounts Receivable - Others' },
-  { accountTitleId: 17, code: '101-20-0009', description: 'Advances to E & E' },
-  { accountTitleId: 18, code: '101-20-0010', description: 'Advances to SSS' },
-  { accountTitleId: 19, code: '101-20-0011', description: 'Advances to Officers and Employees' },
-  { accountTitleId: 20, code: '101-20-0012', description: 'Advances to Customers and Affiliates' },
-  { accountTitleId: 21, code: '101-20-0013', description: 'Creditable Withholding Tax' },
-  { accountTitleId: 22, code: '101-20-0014', description: 'VAT W/Tax Receivable' },
-  { accountTitleId: 23, code: '101-30-0000', description: 'CLAIMS RECEIVABLE' },
-  { accountTitleId: 24, code: '101-30-0001', description: 'Claims Accrual' },
-  { accountTitleId: 25, code: '101-40-0000', description: 'INVENTORY' },
-  { accountTitleId: 26, code: '101-40-0001', description: 'Merchandise Invty' },
-  { accountTitleId: 27, code: '102-00-0000', description: 'FIXED ASSETS' },
-  { accountTitleId: 28, code: '102-10-0000', description: 'LAND, BUILDING & IMPROVEMENTS' },
-  { accountTitleId: 29, code: '102-10-0001', description: 'Land' },
-  { accountTitleId: 30, code: '102-10-0002', description: 'Office Building' },
-  { accountTitleId: 31, code: '102-20-0000', description: 'FURNITURE, FIXTURES & EQUIPMENT' },
-  { accountTitleId: 32, code: '102-20-0001', description: 'Office Furniture & Equipment' },
-  { accountTitleId: 33, code: '102-20-0002', description: 'Transportation Equipment' },
-];
-
 const lookupRows = [
   ...dailyExpenseRows,
   {
@@ -240,6 +213,68 @@ function getEmployeeName(user) {
   return firstName || lastName || getUserField(user, ['username']) || 'Executive Service Account';
 }
 
+function getApiCollection(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.$values)) {
+    return data.$values;
+  }
+
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.result)) {
+    return data.result;
+  }
+
+  if (Array.isArray(data?.records)) {
+    return data.records;
+  }
+
+  return [];
+}
+
+function normalizeAccountTitle(row) {
+  const accountTitleId = getUserField(row, ['accountTitleId', 'accountTitleID', 'AccountTitleID', 'AccountTitleId', 'id', 'Id']);
+  const code = getUserField(row, ['code', 'Code', 'accountCode', 'AccountCode']);
+  const description = getUserField(row, ['description', 'Description', 'accountDescription', 'AccountDescription', 'name', 'Name']);
+
+  if (!code || !description) {
+    return null;
+  }
+
+  return {
+    accountTitleId: accountTitleId || code,
+    code,
+    description,
+  };
+}
+
+function normalizeEmployee(row) {
+  if (!row) {
+    return null;
+  }
+
+  const employeeNo = getEmployeeNo(row);
+  const employeeName = getEmployeeName(row);
+
+  if (!employeeNo && !employeeName) {
+    return null;
+  }
+
+  return {
+    employeeNo,
+    employeeName,
+  };
+}
+
 function getReferenceDateToken(isoDate) {
   const [year, month, day] = isoDate.split('-');
   return year && month && day ? `${year}-${month}${day}` : '0000-0000';
@@ -263,8 +298,8 @@ function generateReferenceNo(rows, isoDate) {
 function createExpenseForm(user, rows, isoDate = getTodayIsoDate()) {
   return {
     ...emptyExpenseForm,
-    employeeNo: getEmployeeNo(user),
-    employeeName: getEmployeeName(user),
+    employeeNo: user ? getEmployeeNo(user) : '',
+    employeeName: user ? getEmployeeName(user) : '',
     date: isoDate,
     referenceNo: generateReferenceNo(rows, isoDate),
     receiptDate: isoDate,
@@ -304,8 +339,13 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
 
 export default function ExpenseEntryView({ user }) {
   const openedDateRef = useRef(getTodayIsoDate());
+  const [employeeInfo, setEmployeeInfo] = useState(null);
+  const [accountTitleRows, setAccountTitleRows] = useState([]);
+  const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
+  const [accountTitlesError, setAccountTitlesError] = useState('');
+  const [employeeError, setEmployeeError] = useState('');
   const [expenseRows, setExpenseRows] = useState(dailyExpenseRows);
-  const [formData, setFormData] = useState(() => createExpenseForm(user, dailyExpenseRows, openedDateRef.current));
+  const [formData, setFormData] = useState(() => createExpenseForm(null, dailyExpenseRows, openedDateRef.current));
   const [errors, setErrors] = useState({});
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isExpenseTypeLookupOpen, setIsExpenseTypeLookupOpen] = useState(false);
@@ -348,13 +388,90 @@ export default function ExpenseEntryView({ user }) {
   }, [attachmentPreview]);
 
   useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadAccountTitles = async () => {
+      setIsAccountTitlesLoading(true);
+      setAccountTitlesError('');
+
+      try {
+        const response = await fetch(buildApiUrl(ACCOUNT_TITLES_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Unable to load account titles.');
+        }
+
+        setAccountTitleRows(getApiCollection(data).map(normalizeAccountTitle).filter(Boolean));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setAccountTitleRows([]);
+          setAccountTitlesError(error.message || 'Unable to load account titles.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsAccountTitlesLoading(false);
+        }
+      }
+    };
+
+    loadAccountTitles();
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadCurrentEmployee = async () => {
+      setEmployeeError('');
+
+      try {
+        const response = await fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Unable to load employee record.');
+        }
+
+        const employee = normalizeEmployee(data?.employee || data?.data || data);
+
+        if (!employee) {
+          throw new Error('Employee record has no employee no or employee name.');
+        }
+
+        setEmployeeInfo(employee);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setEmployeeInfo(null);
+          setEmployeeError(error.message || 'Unable to load employee record.');
+        }
+      }
+    };
+
+    loadCurrentEmployee();
+
+    return () => controller.abort();
+  }, [user]);
+
+  useEffect(() => {
     setFormData((current) => ({
       ...current,
-      employeeNo: getEmployeeNo(user),
-      employeeName: getEmployeeName(user),
+      employeeNo: employeeInfo ? getEmployeeNo(employeeInfo) : '',
+      employeeName: employeeInfo ? getEmployeeName(employeeInfo) : '',
       referenceNo: generateReferenceNo(expenseRows, current.date || openedDateRef.current),
     }));
-  }, [user, expenseRows]);
+  }, [employeeInfo, user, expenseRows]);
 
   const updateForm = (event) => {
     const { name, value } = event.target;
@@ -426,13 +543,13 @@ export default function ExpenseEntryView({ user }) {
     const nextRows = [nextRow, ...expenseRows];
     setExpenseRows(nextRows);
     setPage(1);
-    setFormData(createExpenseForm(user, nextRows, openedDateRef.current));
+    setFormData(createExpenseForm(employeeInfo, nextRows, openedDateRef.current));
     setErrors({});
     setAttachmentPreview(null);
   };
 
   const handleClear = () => {
-    setFormData(createExpenseForm(user, expenseRows, openedDateRef.current));
+    setFormData(createExpenseForm(employeeInfo, expenseRows, openedDateRef.current));
     setErrors({});
     setAttachmentPreview(null);
   };
@@ -493,6 +610,7 @@ export default function ExpenseEntryView({ user }) {
             <div className="etr-expense-grid two">
               <FormField label="Employee No" name="employeeNo" value={formData.employeeNo} onChange={updateForm} error={errors.employeeNo} readOnly required />
               <FormField label="Employee Name" name="employeeName" value={formData.employeeName} onChange={updateForm} error={errors.employeeName} readOnly required placeholder="Lastname, Firstname, Middle Initial" />
+              {employeeError ? <div className="etr-expense-field-note">{employeeError}</div> : null}
               <FormField label="Entry Date" name="date" type="date" value={formData.date} onChange={updateForm} />
               <FormField label="Reference No" name="referenceNo" value={formData.referenceNo} onChange={updateForm} error={errors.referenceNo} readOnly required />
             </div>
@@ -539,12 +657,21 @@ export default function ExpenseEntryView({ user }) {
                         autoFocus
                       />
                       <div className="etr-expense-combo-list">
-                        {filteredExpenseTypeRows.map((row) => (
+                        {isAccountTitlesLoading ? (
+                          <div className="etr-expense-combo-status">Loading account titles...</div>
+                        ) : null}
+                        {!isAccountTitlesLoading && accountTitlesError ? (
+                          <div className="etr-expense-combo-status is-error">{accountTitlesError}</div>
+                        ) : null}
+                        {!isAccountTitlesLoading && !accountTitlesError && filteredExpenseTypeRows.length === 0 ? (
+                          <div className="etr-expense-combo-status">No account titles found.</div>
+                        ) : null}
+                        {!isAccountTitlesLoading && !accountTitlesError ? filteredExpenseTypeRows.map((row) => (
                           <button type="button" key={row.accountTitleId} onClick={() => handleSelectExpenseType(row)}>
                             <span>{row.code}</span>
                             <strong>{row.description}</strong>
                           </button>
-                        ))}
+                        )) : null}
                       </div>
                     </div>
                   ) : null}

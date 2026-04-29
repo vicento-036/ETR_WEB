@@ -333,6 +333,17 @@
   overflow-y: auto;
 }
 
+.etr-expense-combo-status {
+  color: #587390;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  padding: 10px;
+}
+
+.etr-expense-combo-status.is-error {
+  color: #8d2c2c;
+}
+
 .etr-expense-combo-list button {
   display: grid;
   grid-template-columns: 116px minmax(0, 1fr);
@@ -395,6 +406,17 @@
   color: #b42d2d;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.etr-expense-field-note {
+  align-self: end;
+  border: 1px solid rgba(180, 45, 45, 0.2);
+  border-radius: 8px;
+  background: #fff8f8;
+  color: #8d2c2c;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  padding: 8px 10px;
 }
 
 .etr-expense-total-input {
