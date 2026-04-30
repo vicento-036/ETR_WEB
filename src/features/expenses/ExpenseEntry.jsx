@@ -6,6 +6,11 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
+const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
+const ATTACHMENT_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|pdf|png|tif|tiff|webp)$/i;
+const ATTACHMENT_IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp)$/i;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_LABEL = '5 MB';
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -113,25 +118,7 @@ const emptyExpenseForm = {
   attachment: '',
 };
 
-const lookupRows = [
-  ...dailyExpenseRows,
-  {
-    employeeNo: 'EMP-0091',
-    employeeName: 'Garcia, Anne',
-    date: '04/26/2026',
-    referenceNo: 'EXP-2026-0426-004',
-    receiptDate: '04/26/2026',
-    expenseType: 'Representation',
-    tinNo: '238-771-009-000',
-    orSiNo: 'OR-44219',
-    documentNo: 'DOC-58092',
-    description: 'Client presentation materials',
-    amount: '4,725.00',
-    vat: '567.00',
-    total: '5,292.00',
-    attachment: 'presentation-or.pdf',
-  },
-];
+
 
 function parseMoney(value) {
   return Number(String(value || '').replace(/,/g, '')) || 0;
@@ -144,6 +131,13 @@ function formatMoney(value) {
   });
 }
 
+function formatTotal(value) {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
 function formatDateForTable(value) {
   if (!value) {
     return '';
@@ -151,6 +145,42 @@ function formatDateForTable(value) {
 
   const [year, month, day] = value.split('-');
   return year && month && day ? `${month}/${day}/${year}` : value;
+}
+
+function formatTinNo(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 14);
+  const first = digits.slice(0, 3);
+  const second = digits.slice(3, 6);
+  const third = digits.slice(6, 9);
+  const fourth = digits.slice(9, 14);
+
+  return [first, second, third, fourth].filter(Boolean).join('-');
+}
+
+function isAllowedAttachment(file) {
+  if (!file) {
+    return false;
+  }
+
+  return file.type.startsWith('image/')
+    || file.type === 'application/pdf'
+    || ATTACHMENT_EXTENSION_PATTERN.test(file.name);
+}
+
+function isImageAttachment(file) {
+  if (!file) {
+    return false;
+  }
+
+  return file.type.startsWith('image/') || ATTACHMENT_IMAGE_EXTENSION_PATTERN.test(file.name);
+}
+
+function formatAttachmentSize(bytes) {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 function getTodayIsoDate() {
@@ -325,7 +355,7 @@ function ExpenseChevronIcon({ isOpen }) {
   );
 }
 
-function FormField({ label, name, value, onChange, error, type = 'text', children, readOnly = false, required = false, placeholder = '' }) {
+function FormField({ label, name, value, onChange, error, type = 'text', children, readOnly = false, required = false, placeholder = '', maxLength }) {
   return (
     <label className={`etr-expense-field ${error ? 'has-error' : ''}`}>
       <span>
@@ -340,6 +370,7 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
           readOnly={readOnly}
           aria-invalid={!!error}
           placeholder={placeholder}
+          maxLength={maxLength}
         />
       )}
       {error ? <small>{error}</small> : null}
@@ -349,6 +380,7 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
 
 export default function ExpenseEntryView({ user }) {
   const openedDateRef = useRef(getTodayIsoDate());
+  const attachmentInputRef = useRef(null);
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
@@ -363,6 +395,7 @@ export default function ExpenseEntryView({ user }) {
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
   const [page, setPage] = useState(1);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -505,6 +538,48 @@ export default function ExpenseEntryView({ user }) {
       } else {
         setErrors((current) => ({ ...current, [name]: '' }));
       }
+    } else if (name === 'tinNo') {
+      setFormData((current) => ({ ...current, tinNo: formatTinNo(value) }));
+      setErrors((current) => ({ ...current, tinNo: '' }));
+    } else if (name === 'orSiNo') {
+      const hasInvalidCharacters = /[^a-zA-Z0-9-]/.test(value);
+      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 50);
+
+      setFormData((current) => ({ ...current, orSiNo: formattedValue }));
+      setErrors((current) => ({
+        ...current,
+        orSiNo: hasInvalidCharacters ? 'OR/SI No can only contain letters, numbers, and dash (-).' : '',
+      }));
+    } else if (name === 'documentNo') {
+      const hasInvalidCharacters = /[^a-zA-Z0-9-]/.test(value);
+      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 50);
+
+      setFormData((current) => ({ ...current, documentNo: formattedValue }));
+      setErrors((current) => ({
+        ...current,
+        documentNo: hasInvalidCharacters ? 'Document No can only contain letters, numbers, and dash (-).' : '',
+      }));
+    } else if (name === 'amount' || name === 'vat') {
+      // Remove 'e' and 'E' from number inputs (prevent scientific notation)
+      const cleanedValue = value.replace(/[eE]/g, '');
+      
+      // Validate VAT: cannot be higher than amount
+      if (name === 'vat') {
+        const amount = parseMoney(formData.amount);
+        const vat = parseMoney(cleanedValue);
+        
+        if (vat > amount) {
+          // Prevent input - don't update the value
+          setErrors((current) => ({ ...current, [name]: 'VAT cannot be higher than Amount.' }));
+          return;
+        } else {
+          setFormData((current) => ({ ...current, [name]: cleanedValue }));
+          setErrors((current) => ({ ...current, [name]: '' }));
+        }
+      } else {
+        setFormData((current) => ({ ...current, [name]: cleanedValue }));
+        setErrors((current) => ({ ...current, [name]: '' }));
+      }
     } else {
       setFormData((current) => ({
         ...current,
@@ -526,6 +601,11 @@ export default function ExpenseEntryView({ user }) {
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
+    if (formData.attachment && !attachmentPreview) nextErrors.attachment = 'Attach an image or PDF file.';
+    
+    const amount = parseMoney(formData.amount);
+    const vat = parseMoney(formData.vat);
+    if (vat > amount) nextErrors.vat = 'VAT cannot be higher than Amount.';
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -587,7 +667,7 @@ export default function ExpenseEntryView({ user }) {
         description: formData.description.trim(),
         amount: formatMoney(parseMoney(formData.amount)),
         vat: formatMoney(parseMoney(formData.vat)),
-        total: formatMoney(total),
+        total: formatTotal(total),
         attachment: formData.attachment || 'No attachment',
       };
 
@@ -596,7 +676,11 @@ export default function ExpenseEntryView({ user }) {
       setPage(1);
       setFormData(createExpenseForm(employeeInfo, nextRows, openedDateRef.current));
       setErrors({});
+      setIsAttachmentViewerOpen(false);
       setAttachmentPreview(null);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = '';
+      }
       setSaveMessage(data.message || 'Daily expense saved successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to save daily expense.');
@@ -610,7 +694,11 @@ export default function ExpenseEntryView({ user }) {
     setErrors({});
     setSaveError('');
     setSaveMessage('');
+    setIsAttachmentViewerOpen(false);
     setAttachmentPreview(null);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = '';
+    }
   };
 
   const handleSelectExpenseType = (row) => {
@@ -635,17 +723,69 @@ export default function ExpenseEntryView({ user }) {
       return;
     }
 
+    if (!isAllowedAttachment(file)) {
+      event.target.value = '';
+      setErrors((current) => ({
+        ...current,
+        attachment: 'Image or PDF lang ang pwede i-upload.',
+      }));
+      return;
+    }
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      event.target.value = '';
+      setErrors((current) => ({
+        ...current,
+        attachment: `Hanggang ${MAX_ATTACHMENT_LABEL} lang ang pwede i-upload.`,
+      }));
+      return;
+    }
+
     if (attachmentPreview?.url) {
       URL.revokeObjectURL(attachmentPreview.url);
     }
 
     setFormData((current) => ({ ...current, attachment: file.name }));
+    setErrors((current) => ({ ...current, attachment: '' }));
     setAttachmentPreview({
       name: file.name,
-      size: `${(file.size / 1024).toFixed(1)} KB`,
+      size: formatAttachmentSize(file.size),
       type: file.type || 'Document',
-      url: file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
+      url: URL.createObjectURL(file),
+      isImage: isImageAttachment(file),
     });
+    setIsAttachmentViewerOpen(false);
+  };
+
+  const handleChooseAttachment = () => {
+    attachmentInputRef.current?.click();
+  };
+
+  const handlePreviewAttachment = () => {
+    if (!attachmentPreview?.url) {
+      return;
+    }
+
+    if (attachmentPreview.isImage) {
+      setIsAttachmentViewerOpen(true);
+      return;
+    }
+
+    window.open(attachmentPreview.url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleRemoveAttachment = () => {
+    if (attachmentPreview?.url) {
+      URL.revokeObjectURL(attachmentPreview.url);
+    }
+
+    setFormData((current) => ({ ...current, attachment: '' }));
+    setIsAttachmentViewerOpen(false);
+    setAttachmentPreview(null);
+    setErrors((current) => ({ ...current, attachment: '' }));
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = '';
+    }
   };
 
   return (
@@ -658,9 +798,8 @@ export default function ExpenseEntryView({ user }) {
         </div>
 
         <div className="etr-expense-actions">
-          <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
-          <button type="button" onClick={handleClear} disabled={isSaving}>Clear</button>
           <button type="button" onClick={handleClear} disabled={isSaving}>New</button>
+          <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
         </div>
       </div>
 
@@ -690,9 +829,23 @@ export default function ExpenseEntryView({ user }) {
             </div>
             <div className="etr-expense-grid three">
               <FormField label="Receipt Date" name="receiptDate" type="date" value={formData.receiptDate} onChange={updateForm} error={errors.receiptDate} required />
-              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} />
-              <FormField label="OR/SI No" name="orSiNo" value={formData.orSiNo} onChange={updateForm} />
-              <FormField label="Document No" name="documentNo" value={formData.documentNo} onChange={updateForm} />
+              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} placeholder="000-000-000-00000" />
+              <FormField
+                label="OR/SI No"
+                name="orSiNo"
+                value={formData.orSiNo}
+                onChange={updateForm}
+                error={errors.orSiNo}
+                maxLength={50}
+              />
+              <FormField
+                label="Document No"
+                name="documentNo"
+                value={formData.documentNo}
+                onChange={updateForm}
+                error={errors.documentNo}
+                maxLength={50}
+              />
             </div>
           </section>
 
@@ -762,8 +915,8 @@ export default function ExpenseEntryView({ user }) {
             <div className="etr-expense-grid amount">
               <FormField label="Amount" name="amount" type="number" value={formData.amount} onChange={updateForm} error={errors.amount} required />
               <FormField label="VAT" name="vat" type="number" value={formData.vat} onChange={updateForm} />
-              <FormField label="Total" name="total" value={formatMoney(total)} readOnly>
-                <input value={formatMoney(total)} readOnly className="etr-expense-total-input" />
+              <FormField label="Total" name="total" value={formatTotal(total)} readOnly>
+                <input value={formatTotal(total)} readOnly className="etr-expense-total-input" />
               </FormField>
             </div>
           </section>
@@ -773,21 +926,46 @@ export default function ExpenseEntryView({ user }) {
               <h2>Attachment</h2>
               <span>Receipt preview</span>
             </div>
-            <label className="etr-expense-upload">
-              <input type="file" accept="image/*,.pdf" onChange={handleFileChange} />
+            <label className={`etr-expense-upload ${errors.attachment ? 'has-error' : ''}`}>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                onChange={handleFileChange}
+              />
               <span>Upload receipt or invoice</span>
               <strong>{formData.attachment || 'No file selected'}</strong>
             </label>
-            <div className="etr-expense-preview">
+            {errors.attachment ? <small className="etr-expense-upload-error">{errors.attachment}</small> : null}
+            <button
+              type="button"
+              className={`etr-expense-preview ${attachmentPreview?.url ? 'is-clickable' : ''}`}
+              onClick={handlePreviewAttachment}
+              disabled={!attachmentPreview?.url}
+              aria-label={attachmentPreview?.url ? `View ${attachmentPreview.name}` : 'No attachment preview available'}
+            >
               {attachmentPreview?.url ? (
-                <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+                attachmentPreview.isImage ? (
+                  <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+                ) : (
+                  <div>
+                    <strong>{attachmentPreview.name}</strong>
+                    <span>{attachmentPreview.type} - {attachmentPreview.size}</span>
+                  </div>
+                )
               ) : (
                 <div>
                   <strong>{attachmentPreview?.name || formData.attachment || 'Preview area'}</strong>
-                  <span>{attachmentPreview ? `${attachmentPreview.type} - ${attachmentPreview.size}` : 'Image previews appear here after upload.'}</span>
+                  <span>{attachmentPreview ? `${attachmentPreview.type} - ${attachmentPreview.size}` : `Images and PDF receipts/invoices only. Max ${MAX_ATTACHMENT_LABEL}.`}</span>
                 </div>
               )}
-            </div>
+            </button>
+            {formData.attachment ? (
+              <div className="etr-expense-attachment-actions">
+                <button type="button" onClick={handleChooseAttachment}>Change</button>
+                <button type="button" onClick={handleRemoveAttachment}>Remove</button>
+              </div>
+            ) : null}
           </section>
 
           <div className="etr-expense-approval-note">
@@ -795,6 +973,18 @@ export default function ExpenseEntryView({ user }) {
           </div>
         </aside>
       </div>
+
+      {isAttachmentViewerOpen && attachmentPreview?.url && attachmentPreview.isImage ? (
+        <div className="etr-expense-viewer-backdrop" role="presentation" onClick={() => setIsAttachmentViewerOpen(false)}>
+          <section className="etr-expense-viewer" role="dialog" aria-modal="true" aria-label="Attachment preview" onClick={(event) => event.stopPropagation()}>
+            <div className="etr-expense-viewer-head">
+              <strong>{attachmentPreview.name}</strong>
+              <button type="button" onClick={() => setIsAttachmentViewerOpen(false)} aria-label="Close attachment preview">Close</button>
+            </div>
+            <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+          </section>
+        </div>
+      ) : null}
 
       {isLookupOpen ? (
         <div className="etr-expense-modal-backdrop" role="presentation">
