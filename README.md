@@ -25,3 +25,4 @@ npm run build
 - This project is a Vite + React UI.
 - Authentication and database access are handled by the `Etris_WebAPI` backend.
 - Run the WebAPI at the same time so the UI can call `/api/login` and `/api/health`.
+- See `src/README.md` for the folder guide when looking for files to edit.

@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ExpenseEntryView from '../features/expenses/ExpenseEntry';
+import { DailyExpenseManagerView } from '../expenses/DailyExpenseManager';
+import {
+  ExpenseEntryView,
+} from '../expenses/ExpenseEntry';
+import { approveDailyExpense, fetchCurrentEmployee, fetchDailyExpenses } from '../expenses/dailyExpenseApi';
 
 const sidebarSections = [
   {
@@ -47,7 +51,14 @@ const sidebarSections = [
     id: 'finance',
     title: 'Finance',
     children: [
-      { id: 'expense-entry', label: 'Expense Entry', icon: 'document' },
+      {
+        id: 'daily-expense-manager',
+        label: 'Daily Expense Manager',
+        icon: 'table',
+        children: [
+          { id: 'daily-expense-entry', label: 'Daily Expense Entry', icon: 'document' },
+        ],
+      },
       { id: 'official-receipt', label: 'Official Receipt', icon: 'document' },
       { id: 'official-receipt-deductions', label: 'Official Receipt Deductions', icon: 'table' },
       { id: 'payable-entry', label: 'Payable Entry', icon: 'clipboard' },
@@ -132,16 +143,57 @@ function getUserDisplayName(user) {
   return user.username || 'Executive Service Account';
 }
 
-function DashboardContent({ activeItemId, user }) {
-  if (activeItemId === 'expense-entry') {
-    return <ExpenseEntryView user={user} />;
+function applyEmployeeFallback(rows, employee) {
+  return rows.map((row) => ({
+    ...row,
+    employeeNo: row.employeeNo || employee?.employeeNo || '',
+    employeeName: row.employeeName || employee?.employeeName || '',
+  }));
+}
+
+function DashboardContent({
+  activeItemId,
+  user,
+  expenseRows,
+  selectedExpenseTransaction,
+  onOpenExpenseTransaction,
+  onCreateExpenseTransaction,
+  onApproveExpenseTransaction,
+  onBackToExpenseManager,
+  onSaveExpenseTransaction,
+  isExpenseLoading,
+  expenseLoadError,
+}) {
+  if (activeItemId === 'daily-expense-manager') {
+    return (
+      <DailyExpenseManagerView
+        expenseRows={expenseRows}
+        isLoading={isExpenseLoading}
+        error={expenseLoadError}
+        onOpenTransaction={onOpenExpenseTransaction}
+        onCreateNew={onCreateExpenseTransaction}
+      />
+    );
+  }
+
+  if (activeItemId === 'daily-expense-entry') {
+    return (
+      <ExpenseEntryView
+        user={user}
+        expenseRows={expenseRows}
+        selectedTransaction={selectedExpenseTransaction}
+        onTransactionSaved={onSaveExpenseTransaction}
+        onApproveTransaction={onApproveExpenseTransaction}
+        onBackToManager={onBackToExpenseManager}
+      />
+    );
   }
 
   return (
     <div className="etr-dashboard-empty-state">
       <p className="etr-expense-kicker">Module Workspace</p>
       <h1>Select a transaction from the sidebar</h1>
-      <span>Finance Expense Entry is ready with the DailyExpense table.</span>
+      <span>Finance Daily Expense Manager and Daily Expense Entry are ready.</span>
     </div>
   );
 }
@@ -156,7 +208,19 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
       <button
         type="button"
         className={`etr-dashboard-child-button ${hasChildren ? 'has-children' : 'is-leaf'} ${isOpen ? 'is-open' : ''} ${isActive ? 'is-active' : ''}`}
-        onClick={() => (hasChildren ? onToggle(item.id) : onSelect(item.id))}
+        onClick={() => {
+          if (hasChildren) {
+            onToggle(item.id);
+
+            if (item.id === 'daily-expense-manager') {
+              onSelect(item.id);
+            }
+
+            return;
+          }
+
+          onSelect(item.id);
+        }}
       >
         <span className="etr-dashboard-item-main">
           <span className="etr-dashboard-item-icon">
@@ -193,14 +257,20 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
-  const [activeItemId, setActiveItemId] = useState('expense-entry');
+  const [activeItemId, setActiveItemId] = useState('');
+  const [expenseRows, setExpenseRows] = useState([]);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+  const [isExpenseLoading, setIsExpenseLoading] = useState(false);
+  const [expenseLoadError, setExpenseLoadError] = useState('');
+  const [selectedExpenseTransaction, setSelectedExpenseTransaction] = useState(null);
   const [openSections, setOpenSections] = useState({
     sales: false,
     logistics: false,
     inventory: false,
-    finance: true,
+    finance: false,
     analytics: false,
     'advanced-pricing': false,
+    'daily-expense-manager': false,
   });
   const dragStateRef = useRef({
     isDragging: false,
@@ -209,6 +279,38 @@ function DashboardPage({ user, onLogout }) {
   });
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const loadDailyExpenses = async () => {
+      setIsExpenseLoading(true);
+      setExpenseLoadError('');
+
+      try {
+        const [rows, employee] = await Promise.all([
+          fetchDailyExpenses({ signal: controller.signal }),
+          fetchCurrentEmployee({ signal: controller.signal }).catch(() => null),
+        ]);
+
+        setCurrentEmployee(employee);
+        setExpenseRows(applyEmployeeFallback(rows, employee));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setExpenseRows([]);
+          setExpenseLoadError(error.message || 'Unable to load daily expense transactions.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsExpenseLoading(false);
+        }
+      }
+    };
+
+    loadDailyExpenses();
+
+    return () => controller.abort();
+  }, []);
 
   const toggleSection = (sectionId) => {
     setOpenSections((current) => ({
@@ -260,6 +362,77 @@ function DashboardPage({ user, onLogout }) {
 
   const handleShowSidebar = () => {
     setSidebarWidth(sidebarWidth > 0 ? 0 : 398);
+  };
+
+  const handleSelectModule = (itemId) => {
+    if (itemId === 'daily-expense-entry') {
+      setSelectedExpenseTransaction(null);
+    }
+
+    if (itemId === 'daily-expense-manager') {
+      setSelectedExpenseTransaction(null);
+    }
+
+    setActiveItemId(itemId);
+  };
+
+  const openExpenseTransaction = (transaction) => {
+    setOpenSections((current) => ({ ...current, 'daily-expense-manager': true }));
+    setSelectedExpenseTransaction(transaction);
+    setActiveItemId('daily-expense-entry');
+  };
+
+  const createExpenseTransaction = () => {
+    setOpenSections((current) => ({ ...current, 'daily-expense-manager': true }));
+    setSelectedExpenseTransaction(null);
+    setActiveItemId('daily-expense-entry');
+  };
+
+  const backToExpenseManager = () => {
+    setOpenSections((current) => ({ ...current, 'daily-expense-manager': true }));
+    setSelectedExpenseTransaction(null);
+    setActiveItemId('daily-expense-manager');
+  };
+
+  const saveExpenseTransaction = (savedTransaction, options = {}) => {
+    const normalizedTransaction = {
+      ...savedTransaction,
+      employeeNo: savedTransaction.employeeNo || currentEmployee?.employeeNo || '',
+      employeeName: savedTransaction.employeeName || currentEmployee?.employeeName || '',
+    };
+
+    setExpenseRows((current) => {
+      const existingIndex = current.findIndex((row) => (
+        (normalizedTransaction.id && row.id === normalizedTransaction.id) || row.referenceNo === normalizedTransaction.referenceNo
+      ));
+
+      if (existingIndex === -1) {
+        return [normalizedTransaction, ...current];
+      }
+
+      return current.map((row) => (
+        (normalizedTransaction.id && row.id === normalizedTransaction.id) || row.referenceNo === normalizedTransaction.referenceNo
+          ? normalizedTransaction
+          : row
+      ));
+    });
+
+    if (options.selectTransaction) {
+      setSelectedExpenseTransaction(normalizedTransaction);
+    }
+
+    return normalizedTransaction;
+  };
+
+  const approveExpenseTransaction = async (transaction) => {
+    const approvedTransaction = await approveDailyExpense(transaction);
+    setExpenseRows((current) => current.map((row) => (
+      (approvedTransaction.id && row.id === approvedTransaction.id) || row.referenceNo === approvedTransaction.referenceNo
+        ? approvedTransaction
+        : row
+    )));
+    setSelectedExpenseTransaction(approvedTransaction);
+    return approvedTransaction;
   };
 
   return (
@@ -324,7 +497,7 @@ function DashboardPage({ user, onLogout }) {
                         openItems={openSections}
                         activeItemId={activeItemId}
                         onToggle={toggleSection}
-                        onSelect={setActiveItemId}
+                        onSelect={handleSelectModule}
                       />
                     ))}
                   </ul>
@@ -344,7 +517,19 @@ function DashboardPage({ user, onLogout }) {
         <section className="etr-dashboard-main">
           <div className="etr-dashboard-canvas">
             <div className="etr-dashboard-content">
-              <DashboardContent activeItemId={activeItemId} user={user} />
+              <DashboardContent
+                activeItemId={activeItemId}
+                user={user}
+                expenseRows={expenseRows}
+                selectedExpenseTransaction={selectedExpenseTransaction}
+                onOpenExpenseTransaction={openExpenseTransaction}
+                onCreateExpenseTransaction={createExpenseTransaction}
+                onApproveExpenseTransaction={approveExpenseTransaction}
+                onBackToExpenseManager={backToExpenseManager}
+                onSaveExpenseTransaction={saveExpenseTransaction}
+                isExpenseLoading={isExpenseLoading}
+                expenseLoadError={expenseLoadError}
+              />
             </div>
           </div>
         </section>
