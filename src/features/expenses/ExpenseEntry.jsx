@@ -316,33 +316,13 @@ function getValidationMessage(data) {
   return data?.message || 'Unable to save daily expense.';
 }
 
-function getReferenceDateToken(isoDate) {
-  const [year, month, day] = isoDate.split('-');
-  return year && month && day ? `${year}-${month}${day}` : '0000-0000';
-}
-
-function generateReferenceNo(rows, isoDate) {
-  const dateToken = getReferenceDateToken(isoDate);
-  const prefix = `EXP-${dateToken}-`;
-  const nextSequence = rows.reduce((highestSequence, row) => {
-    if (!row.referenceNo?.startsWith(prefix)) {
-      return highestSequence;
-    }
-
-    const sequence = Number(row.referenceNo.slice(prefix.length));
-    return Number.isFinite(sequence) ? Math.max(highestSequence, sequence) : highestSequence;
-  }, 0) + 1;
-
-  return `${prefix}${String(nextSequence).padStart(3, '0')}`;
-}
-
-function createExpenseForm(user, rows, isoDate = getTodayIsoDate()) {
+function createExpenseForm(user, isoDate = getTodayIsoDate()) {
   return {
     ...emptyExpenseForm,
     employeeNo: user ? getEmployeeNo(user) : '',
     employeeName: user ? getEmployeeName(user) : '',
     date: isoDate,
-    referenceNo: generateReferenceNo(rows, isoDate),
+    referenceNo: '',
     receiptDate: isoDate,
   };
 }
@@ -387,7 +367,7 @@ export default function ExpenseEntryView({ user }) {
   const [accountTitlesError, setAccountTitlesError] = useState('');
   const [employeeError, setEmployeeError] = useState('');
   const [expenseRows, setExpenseRows] = useState(dailyExpenseRows);
-  const [formData, setFormData] = useState(() => createExpenseForm(null, dailyExpenseRows, openedDateRef.current));
+  const [formData, setFormData] = useState(() => createExpenseForm(null, openedDateRef.current));
   const [errors, setErrors] = useState({});
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isExpenseTypeLookupOpen, setIsExpenseTypeLookupOpen] = useState(false);
@@ -515,9 +495,8 @@ export default function ExpenseEntryView({ user }) {
       ...current,
       employeeNo: employeeInfo ? getEmployeeNo(employeeInfo) : '',
       employeeName: employeeInfo ? getEmployeeName(employeeInfo) : '',
-      referenceNo: generateReferenceNo(expenseRows, current.date || openedDateRef.current),
     }));
-  }, [employeeInfo, user, expenseRows]);
+  }, [employeeInfo, user]);
 
   const updateForm = (event) => {
     const { name, value } = event.target;
@@ -584,7 +563,6 @@ export default function ExpenseEntryView({ user }) {
       setFormData((current) => ({
         ...current,
         [name]: value,
-        referenceNo: name === 'date' ? generateReferenceNo(expenseRows, value) : current.referenceNo,
       }));
       setErrors((current) => ({ ...current, [name]: '' }));
     }
@@ -596,7 +574,6 @@ export default function ExpenseEntryView({ user }) {
     if (!formData.employeeNo.trim()) nextErrors.employeeNo = 'Employee no is required.';
     if (!formData.employeeName.trim()) nextErrors.employeeName = 'Employee name is required.';
     if (formData.employeeName && /[0-9]/.test(formData.employeeName)) nextErrors.employeeName = 'Employee name cannot contain numbers.';
-    if (!formData.referenceNo.trim()) nextErrors.referenceNo = 'Reference no is required.';
     if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
@@ -630,7 +607,6 @@ export default function ExpenseEntryView({ user }) {
         },
         body: JSON.stringify({
           expenseDate: formData.date,
-          referenceNo: formData.referenceNo.trim(),
           receiptDate: formData.receiptDate || null,
           orSINo: formData.orSiNo.trim(),
           documentNo: formData.documentNo.trim(),
@@ -653,12 +629,14 @@ export default function ExpenseEntryView({ user }) {
 
       const responseEmployeeNo = data.employeeNo || formData.employeeNo.trim();
       const responseEmployeeName = data.employeeName || formData.employeeName.trim();
+      const responseReferenceNo = data.referenceNo || formData.referenceNo.trim() || 'Generated';
 
       const nextRow = {
+        expenseId: data.expenseId,
         employeeNo: responseEmployeeNo,
         employeeName: responseEmployeeName,
         date: formatDateForTable(formData.date),
-        referenceNo: formData.referenceNo.trim(),
+        referenceNo: responseReferenceNo,
         receiptDate: formatDateForTable(formData.receiptDate),
         expenseType: formData.expenseType,
         tinNo: formData.tinNo.trim(),
@@ -674,7 +652,10 @@ export default function ExpenseEntryView({ user }) {
       const nextRows = [nextRow, ...expenseRows];
       setExpenseRows(nextRows);
       setPage(1);
-      setFormData(createExpenseForm(employeeInfo, nextRows, openedDateRef.current));
+      setFormData({
+        ...createExpenseForm(employeeInfo, openedDateRef.current),
+        referenceNo: responseReferenceNo === 'Generated' ? '' : responseReferenceNo,
+      });
       setErrors({});
       setIsAttachmentViewerOpen(false);
       setAttachmentPreview(null);
@@ -690,7 +671,7 @@ export default function ExpenseEntryView({ user }) {
   };
 
   const handleClear = () => {
-    setFormData(createExpenseForm(employeeInfo, expenseRows, openedDateRef.current));
+    setFormData(createExpenseForm(employeeInfo, openedDateRef.current));
     setErrors({});
     setSaveError('');
     setSaveMessage('');
@@ -818,7 +799,7 @@ export default function ExpenseEntryView({ user }) {
               <FormField label="Employee Name" name="employeeName" value={formData.employeeName} onChange={updateForm} error={errors.employeeName} readOnly required placeholder="Lastname, Firstname, Middle Initial" />
               {employeeError ? <div className="etr-expense-field-note">{employeeError}</div> : null}
               <FormField label="Entry Date" name="date" type="date" value={formData.date} onChange={updateForm} />
-              <FormField label="Reference No" name="referenceNo" value={formData.referenceNo} onChange={updateForm} error={errors.referenceNo} readOnly required />
+              <FormField label="Reference No" name="referenceNo" value={formData.referenceNo} onChange={updateForm} error={errors.referenceNo} readOnly placeholder="Generated on save" />
             </div>
           </section>
 
@@ -1014,7 +995,7 @@ export default function ExpenseEntryView({ user }) {
                 </thead>
                 <tbody>
                   {filteredLookupRows.map((row) => (
-                    <tr key={row.referenceNo}>
+                    <tr key={row.expenseId || row.referenceNo}>
                       <td>{row.referenceNo}</td>
                       <td>{row.employeeName}</td>
                       <td>{row.expenseType}</td>
