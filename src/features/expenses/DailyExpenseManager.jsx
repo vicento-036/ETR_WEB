@@ -4,6 +4,8 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
+const MANAGER_PAGE_SIZE = 8;
+const MAX_VISIBLE_PAGE_BUTTONS = 8;
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -78,6 +80,30 @@ function formatMoney(value) {
   });
 }
 
+function getSortValue(row, column) {
+  if (column.isNumber) {
+    return Number(String(row[`${column.key}Value`] ?? row[column.key] ?? 0).replace(/,/g, '')) || 0;
+  }
+
+  if (column.key === 'date') {
+    return row.dateInput || row.date || '';
+  }
+
+  if (column.key === 'receiptDate') {
+    return row.receiptDateInput || row.receiptDate || '';
+  }
+
+  return String(row[column.key] || '').toLowerCase();
+}
+
+function getVisiblePages(currentPage, totalPages) {
+  const visibleCount = Math.min(MAX_VISIBLE_PAGE_BUTTONS, totalPages);
+  const half = Math.floor(visibleCount / 2);
+  const start = Math.max(1, Math.min(currentPage - half, totalPages - visibleCount + 1));
+
+  return Array.from({ length: visibleCount }, (_, index) => start + index);
+}
+
 function normalizeDailyExpense(row) {
   const expenseDate = getField(row, ['expenseDate', 'ExpenseDate', 'date', 'Date']);
   const receiptDate = getField(row, ['receiptDate', 'ReceiptDate']);
@@ -113,6 +139,7 @@ function normalizeDailyExpense(row) {
     total: formatMoney(getField(row, ['total', 'Total'])),
     totalValue: getField(row, ['total', 'Total']),
     attachment: getField(row, ['attachment', 'Attachment']),
+    attachmentUrl: getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']),
   };
 }
 
@@ -137,6 +164,8 @@ const columns = [
 export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -192,6 +221,52 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
       .includes(normalizedQuery));
   }, [query, rows]);
 
+  const sortedRows = useMemo(() => {
+    if (!sortConfig.key) {
+      return filteredRows;
+    }
+
+    const column = columns.find((item) => item.key === sortConfig.key);
+
+    if (!column) {
+      return filteredRows;
+    }
+
+    return [...filteredRows].sort((first, second) => {
+      const firstValue = getSortValue(first, column);
+      const secondValue = getSortValue(second, column);
+
+      if (firstValue < secondValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+
+      if (firstValue > secondValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+
+      return 0;
+    });
+  }, [filteredRows, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
+  const visiblePages = getVisiblePages(page, totalPages);
+  const pagedRows = sortedRows.slice((page - 1) * MANAGER_PAGE_SIZE, page * MANAGER_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, sortConfig.key, sortConfig.direction]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
+  const handleSort = (columnKey) => {
+    setSortConfig((current) => ({
+      key: columnKey,
+      direction: current.key === columnKey && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
   return (
     <div className="etr-expense-entry">
       <div className="etr-expense-toolbar">
@@ -212,7 +287,7 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
         <div className="etr-expense-table-head">
           <div>
             <h2>Daily Expense Transactions</h2>
-            <span>{isLoading ? 'Loading transactions...' : `${filteredRows.length} transaction${filteredRows.length === 1 ? '' : 's'} found`}</span>
+            <span>{isLoading ? 'Loading transactions...' : `${sortedRows.length} transaction${sortedRows.length === 1 ? '' : 's'} found`}</span>
           </div>
 
           <label className="etr-expense-manager-search">
@@ -230,18 +305,30 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
             <thead>
               <tr>
                 {columns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
+                  <th
+                    key={column.key}
+                    aria-sort={sortConfig.key === column.key ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  >
+                    <button
+                      type="button"
+                      className={`etr-expense-sort-button ${sortConfig.key === column.key ? 'is-active' : ''}`}
+                      onClick={() => handleSort(column.key)}
+                    >
+                      <span>{column.label}</span>
+                      <span className={`etr-expense-sort-indicator ${sortConfig.key === column.key ? `is-${sortConfig.direction}` : ''}`} aria-hidden="true" />
+                    </button>
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {!isLoading && filteredRows.length === 0 ? (
+              {!isLoading && sortedRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length}>No daily expense transactions found.</td>
                 </tr>
               ) : null}
 
-              {filteredRows.map((row) => (
+              {pagedRows.map((row) => (
                 <tr
                   key={row.expenseId || row.referenceNo}
                   className="etr-expense-clickable-row"
@@ -261,6 +348,33 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
             </tbody>
           </table>
         </div>
+
+        {sortedRows.length > 0 ? (
+          <div className="etr-expense-pagination" aria-label="Daily expense pagination">
+            <span>
+              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
+            </span>
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </button>
+            <div className="etr-expense-page-numbers">
+              {visiblePages.map((pageNumber) => (
+                <button
+                  type="button"
+                  key={pageNumber}
+                  className={pageNumber === page ? 'is-active' : ''}
+                  onClick={() => setPage(pageNumber)}
+                  aria-current={pageNumber === page ? 'page' : undefined}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
+              Next
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );

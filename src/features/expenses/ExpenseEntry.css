@@ -127,6 +127,64 @@
   text-transform: uppercase;
 }
 
+.etr-expense-sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.etr-expense-sort-button:focus {
+  outline: 2px solid rgba(27, 90, 150, 0.35);
+  outline-offset: 3px;
+}
+
+.etr-expense-sort-button span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etr-expense-sort-indicator {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  width: 8px;
+}
+
+.etr-expense-sort-indicator::before,
+.etr-expense-sort-indicator::after {
+  content: "";
+  justify-self: center;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+  opacity: 0.35;
+}
+
+.etr-expense-sort-indicator::before {
+  border-bottom: 5px solid currentColor;
+}
+
+.etr-expense-sort-indicator::after {
+  border-top: 5px solid currentColor;
+}
+
+.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-asc::before,
+.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-desc::after {
+  opacity: 1;
+}
+
 .etr-expense-table tbody tr:hover {
   background: #f7fbff;
 }
@@ -219,11 +277,18 @@
 }
 
 .etr-expense-grid.details {
-  grid-template-columns: minmax(180px, 0.38fr) minmax(0, 1fr);
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .etr-expense-grid.amount {
   grid-template-columns: 1fr;
+}
+
+.etr-expense-details-left {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
 }
 
 .etr-expense-field {
@@ -407,9 +472,13 @@
 }
 
 .etr-expense-field textarea {
-  min-height: 74px;
+  min-height: 98px;
   resize: vertical;
   padding: 9px 10px;
+}
+
+.etr-expense-description textarea {
+  min-height: 158px;
 }
 
 .etr-expense-field input:focus,
@@ -704,6 +773,23 @@
 
 .etr-expense-pagination button {
   padding: 0 14px;
+}
+
+.etr-expense-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.etr-expense-page-numbers button {
+  min-width: 34px;
+  padding: 0 10px;
+}
+
+.etr-expense-page-numbers button.is-active {
+  border-color: #1b5a96;
+  background: #1b5a96;
+  color: #ffffff;
 }
 
 .etr-expense-pagination button:disabled {

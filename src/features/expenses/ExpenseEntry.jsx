@@ -4,6 +4,7 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
+const SUBSIDIARY_ENDPOINT = '/api/subsidiary';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
@@ -11,6 +12,9 @@ const ATTACHMENT_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|pdf|png
 const ATTACHMENT_IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp)$/i;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_LABEL = '5 MB';
+const MAX_DOCUMENT_REFERENCE_LENGTH = 50;
+const MAX_DESCRIPTION_LENGTH = 255;
+const MAX_TIN_DIGITS = 14;
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -109,6 +113,8 @@ const emptyExpenseForm = {
   receiptDate: '',
   expenseType: '',
   expenseTypeId: '',
+  subsidiary: '',
+  subsidiaryId: '',
   tinNo: '',
   orSiNo: '',
   documentNo: '',
@@ -116,6 +122,7 @@ const emptyExpenseForm = {
   amount: '',
   vat: '',
   attachment: '',
+  attachmentUrl: '',
 };
 
 
@@ -148,7 +155,7 @@ function formatDateForTable(value) {
 }
 
 function formatTinNo(value) {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 14);
+  const digits = String(value || '').replace(/\D/g, '');
   const first = digits.slice(0, 3);
   const second = digits.slice(3, 6);
   const third = digits.slice(6, 9);
@@ -175,6 +182,61 @@ function isImageAttachment(file) {
   return file.type.startsWith('image/') || ATTACHMENT_IMAGE_EXTENSION_PATTERN.test(file.name);
 }
 
+function isImageAttachmentName(name) {
+  return ATTACHMENT_IMAGE_EXTENSION_PATTERN.test(String(name || ''));
+}
+
+function getAttachmentUrl(attachment, attachmentUrl = '') {
+  const source = String(attachmentUrl || attachment || '').trim();
+
+  if (!source) {
+    return '';
+  }
+
+  if (/^(https?:|blob:|data:)/i.test(source)) {
+    return source;
+  }
+
+  if (source.startsWith('/')) {
+    return buildApiUrl(source);
+  }
+
+  if (source.includes('/') || source.includes('\\')) {
+    return buildApiUrl(`/${source.replace(/\\/g, '/').replace(/^\/+/, '')}`);
+  }
+
+  return buildApiUrl(`/uploads/${encodeURIComponent(source)}`);
+}
+
+function createExistingAttachmentPreview(record) {
+  const attachment = record?.attachment || '';
+  const attachmentUrl = record?.attachmentUrl || '';
+  const url = getAttachmentUrl(attachment, attachmentUrl);
+
+  if (!attachment || !url) {
+    return null;
+  }
+
+  return {
+    name: attachment,
+    size: 'Uploaded file',
+    type: isImageAttachmentName(attachment) ? 'Image' : 'Document',
+    url,
+    isImage: isImageAttachmentName(attachment),
+    isObjectUrl: false,
+  };
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatAttachmentSize(bytes) {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -190,6 +252,16 @@ function getTodayIsoDate() {
   const day = String(today.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+}
+
+function isFutureIsoDate(value) {
+  return Boolean(value) && value > getTodayIsoDate();
+}
+
+function blockSignedExponentKeys(event) {
+  if (['e', 'E', '+', '-'].includes(event.key)) {
+    event.preventDefault();
+  }
 }
 
 function getUserField(user, fieldNames) {
@@ -288,6 +360,22 @@ function normalizeAccountTitle(row) {
   };
 }
 
+function normalizeSubsidiary(row) {
+  const costUnitId = getUserField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const code = getUserField(row, ['code', 'Code']);
+  const description = getUserField(row, ['description', 'Description']);
+
+  if (!code || !description) {
+    return null;
+  }
+
+  return {
+    costUnitId,
+    code,
+    description,
+  };
+}
+
 function normalizeEmployee(row) {
   if (!row) {
     return null;
@@ -341,6 +429,8 @@ function createExpenseFormFromRecord(record) {
     receiptDate: record.receiptDateInput || '',
     expenseType: String(record.expenseType || ''),
     expenseTypeId: record.expenseTypeId || '',
+    subsidiary: record.subsidiary || '',
+    subsidiaryId: record.subsidiaryId || record.costUnitId || '',
     tinNo: record.tinNo || '',
     orSiNo: record.orSiNo || '',
     documentNo: record.documentNo || '',
@@ -348,6 +438,7 @@ function createExpenseFormFromRecord(record) {
     amount: String(record.amountValue ?? record.amount ?? '').replace(/,/g, ''),
     vat: String(record.vatValue ?? record.vat ?? '').replace(/,/g, ''),
     attachment: record.attachment || '',
+    attachmentUrl: record.attachmentUrl || '',
   };
 }
 
@@ -359,7 +450,21 @@ function ExpenseChevronIcon({ isOpen }) {
   );
 }
 
-function FormField({ label, name, value, onChange, error, type = 'text', children, readOnly = false, required = false, placeholder = '', maxLength }) {
+function FormField({
+  label,
+  name,
+  value,
+  onChange,
+  error,
+  type = 'text',
+  children,
+  readOnly = false,
+  required = false,
+  placeholder = '',
+  maxLength,
+  inputMode,
+  onKeyDown,
+}) {
   return (
     <label className={`etr-expense-field ${error ? 'has-error' : ''}`}>
       <span>
@@ -375,6 +480,8 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
           aria-invalid={!!error}
           placeholder={placeholder}
           maxLength={maxLength}
+          inputMode={inputMode}
+          onKeyDown={onKeyDown}
         />
       )}
       {error ? <small>{error}</small> : null}
@@ -382,21 +489,30 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
   );
 }
 
-export default function ExpenseEntryView({ user, selectedExpense = null, onBack }) {
-  const openedDateRef = useRef(getTodayIsoDate());
+export default function ExpenseEntryView({
+  user,
+  selectedExpense = null,
+  onBack,
+}) {
   const attachmentInputRef = useRef(null);
+  const attachmentObjectUrlRef = useRef('');
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
   const [accountTitlesError, setAccountTitlesError] = useState('');
+  const [subsidiaryRows, setSubsidiaryRows] = useState([]);
+  const [isSubsidiariesLoading, setIsSubsidiariesLoading] = useState(false);
+  const [subsidiariesError, setSubsidiariesError] = useState('');
   const [employeeError, setEmployeeError] = useState('');
   const [expenseRows, setExpenseRows] = useState(dailyExpenseRows);
-  const [formData, setFormData] = useState(() => createExpenseForm(null, openedDateRef.current));
+  const [formData, setFormData] = useState(() => createExpenseForm(null));
   const [errors, setErrors] = useState({});
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isExpenseTypeLookupOpen, setIsExpenseTypeLookupOpen] = useState(false);
+  const [isSubsidiaryLookupOpen, setIsSubsidiaryLookupOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
+  const [subsidiaryQuery, setSubsidiaryQuery] = useState('');
   const [page, setPage] = useState(1);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
@@ -435,12 +551,29 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       .toLowerCase()
       .includes(query);
   });
+  const filteredSubsidiaryRows = subsidiaryRows.filter((row) => {
+    const query = subsidiaryQuery.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    return [row.code, row.description]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+
+  const revokeAttachmentObjectUrl = () => {
+    if (attachmentObjectUrlRef.current) {
+      URL.revokeObjectURL(attachmentObjectUrlRef.current);
+      attachmentObjectUrlRef.current = '';
+    }
+  };
 
   useEffect(() => () => {
-    if (attachmentPreview?.url) {
-      URL.revokeObjectURL(attachmentPreview.url);
-    }
-  }, [attachmentPreview]);
+    revokeAttachmentObjectUrl();
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -476,6 +609,44 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
     };
 
     loadAccountTitles();
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadSubsidiaries = async () => {
+      setIsSubsidiariesLoading(true);
+      setSubsidiariesError('');
+
+      try {
+        const response = await fetch(buildApiUrl(SUBSIDIARY_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Unable to load subsidiaries.');
+        }
+
+        setSubsidiaryRows(getApiCollection(data).map(normalizeSubsidiary).filter(Boolean));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setSubsidiaryRows([]);
+          setSubsidiariesError(error.message || 'Unable to load subsidiaries.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSubsidiariesLoading(false);
+        }
+      }
+    };
+
+    loadSubsidiaries();
 
     return () => controller.abort();
   }, []);
@@ -521,6 +692,7 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
 
   useEffect(() => {
     if (selectedExpense) {
+      revokeAttachmentObjectUrl();
       setFormData(createExpenseFormFromRecord(selectedExpense));
       setErrors({});
       setSaveError('');
@@ -528,7 +700,7 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       setIsEditingDetail(false);
       setDetailStatus(selectedExpense.status || 'Pending');
       setIsAttachmentViewerOpen(false);
-      setAttachmentPreview(null);
+      setAttachmentPreview(createExistingAttachmentPreview(selectedExpense));
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
       }
@@ -566,48 +738,88 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       } else {
         setErrors((current) => ({ ...current, [name]: '' }));
       }
+    } else if (name === 'date' || name === 'receiptDate') {
+      const fieldLabel = name === 'date' ? 'Entry Date' : 'Receipt Date';
+      const isFutureDate = isFutureIsoDate(value);
+
+      setFormData((current) => ({ ...current, [name]: value }));
+      setErrors((current) => ({
+        ...current,
+        [name]: isFutureDate ? `${fieldLabel} cannot be later than today.` : '',
+      }));
     } else if (name === 'tinNo') {
+      const digits = value.replace(/\D/g, '');
+      const hasInvalidCharacters = /[^0-9-]/.test(value);
+      const isTooLong = digits.length > MAX_TIN_DIGITS;
+
       setFormData((current) => ({ ...current, tinNo: formatTinNo(value) }));
-      setErrors((current) => ({ ...current, tinNo: '' }));
+      setErrors((current) => ({
+        ...current,
+        tinNo: hasInvalidCharacters
+          ? 'TIN No can only contain numbers and dash (-).'
+          : isTooLong
+            ? `TIN No cannot exceed ${MAX_TIN_DIGITS} digits.`
+            : '',
+      }));
     } else if (name === 'orSiNo') {
       const hasInvalidCharacters = /[^a-zA-Z0-9-]/.test(value);
-      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 50);
+      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
+      const isTooLong = formattedValue.length > MAX_DOCUMENT_REFERENCE_LENGTH;
 
       setFormData((current) => ({ ...current, orSiNo: formattedValue }));
       setErrors((current) => ({
         ...current,
-        orSiNo: hasInvalidCharacters ? 'OR/SI No can only contain letters, numbers, and dash (-).' : '',
+        orSiNo: hasInvalidCharacters
+          ? 'OR/SI No can only contain letters, numbers, and dash (-).'
+          : isTooLong
+            ? `OR/SI No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`
+            : '',
       }));
     } else if (name === 'documentNo') {
       const hasInvalidCharacters = /[^a-zA-Z0-9-]/.test(value);
-      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 50);
+      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
+      const isTooLong = formattedValue.length > MAX_DOCUMENT_REFERENCE_LENGTH;
 
       setFormData((current) => ({ ...current, documentNo: formattedValue }));
       setErrors((current) => ({
         ...current,
-        documentNo: hasInvalidCharacters ? 'Document No can only contain letters, numbers, and dash (-).' : '',
+        documentNo: hasInvalidCharacters
+          ? 'Document No can only contain letters, numbers, and dash (-).'
+          : isTooLong
+            ? `Document No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`
+            : '',
       }));
     } else if (name === 'amount' || name === 'vat') {
-      // Remove 'e' and 'E' from number inputs (prevent scientific notation)
-      const cleanedValue = value.replace(/[eE]/g, '');
-      
-      // Validate VAT: cannot be higher than amount
+      const cleanedValue = value.replace(/[eE+-]/g, '');
+
       if (name === 'vat') {
         const amount = parseMoney(formData.amount);
         const vat = parseMoney(cleanedValue);
-        
-        if (vat > amount) {
-          // Prevent input - don't update the value
-          setErrors((current) => ({ ...current, [name]: 'VAT cannot be higher than Amount.' }));
-          return;
-        } else {
-          setFormData((current) => ({ ...current, [name]: cleanedValue }));
-          setErrors((current) => ({ ...current, [name]: '' }));
-        }
+
+        setFormData((current) => ({ ...current, vat: cleanedValue }));
+        setErrors((current) => ({
+          ...current,
+          vat: amount > 0 && vat > amount ? 'VAT cannot be higher than Amount.' : '',
+        }));
       } else {
+        const amount = parseMoney(cleanedValue);
+        const vat = parseMoney(formData.vat);
+
         setFormData((current) => ({ ...current, [name]: cleanedValue }));
-        setErrors((current) => ({ ...current, [name]: '' }));
+        setErrors((current) => ({
+          ...current,
+          amount: '',
+          vat: cleanedValue && vat > amount ? 'VAT cannot be higher than Amount.' : '',
+        }));
       }
+    } else if (name === 'description') {
+      const isTooLong = value.length > MAX_DESCRIPTION_LENGTH;
+
+      setFormData((current) => ({ ...current, description: value }));
+      setErrors((current) => ({
+        ...current,
+        description: isTooLong ? `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.` : '',
+      }));
     } else {
       setFormData((current) => ({
         ...current,
@@ -623,10 +835,17 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
     if (!formData.employeeNo.trim()) nextErrors.employeeNo = 'Employee no is required.';
     if (!formData.employeeName.trim()) nextErrors.employeeName = 'Employee name is required.';
     if (formData.employeeName && /[0-9]/.test(formData.employeeName)) nextErrors.employeeName = 'Employee name cannot contain numbers.';
+    if (!formData.date) nextErrors.date = 'Entry Date is required.';
+    if (isFutureIsoDate(formData.date)) nextErrors.date = 'Entry Date cannot be later than today.';
     if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
+    if (isFutureIsoDate(formData.receiptDate)) nextErrors.receiptDate = 'Receipt Date cannot be later than today.';
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
+    if (formData.tinNo.replace(/\D/g, '').length > MAX_TIN_DIGITS) nextErrors.tinNo = `TIN No cannot exceed ${MAX_TIN_DIGITS} digits.`;
+    if (formData.orSiNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.orSiNo = `OR/SI No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
+    if (formData.documentNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.documentNo = `Document No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
+    if (formData.description.length > MAX_DESCRIPTION_LENGTH) nextErrors.description = `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
     if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
     
     const amount = parseMoney(formData.amount);
@@ -702,11 +921,12 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       setExpenseRows(nextRows);
       setPage(1);
       setFormData({
-        ...createExpenseForm(employeeInfo, openedDateRef.current),
+        ...createExpenseForm(employeeInfo),
         referenceNo: responseReferenceNo === 'Generated' ? '' : responseReferenceNo,
       });
       setErrors({});
       setIsAttachmentViewerOpen(false);
+      revokeAttachmentObjectUrl();
       setAttachmentPreview(null);
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
@@ -808,11 +1028,12 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
   };
 
   const handleClear = () => {
-    setFormData(createExpenseForm(employeeInfo, openedDateRef.current));
+    setFormData(createExpenseForm(employeeInfo));
     setErrors({});
     setSaveError('');
     setSaveMessage('');
     setIsAttachmentViewerOpen(false);
+    revokeAttachmentObjectUrl();
     setAttachmentPreview(null);
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = '';
@@ -835,7 +1056,17 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
     setIsExpenseTypeLookupOpen(false);
   };
 
-  const handleFileChange = (event) => {
+  const handleSelectSubsidiary = (row) => {
+    setFormData((current) => ({
+      ...current,
+      subsidiary: `${row.code} - ${row.description}`,
+      subsidiaryId: row.costUnitId,
+    }));
+    setSubsidiaryQuery('');
+    setIsSubsidiaryLookupOpen(false);
+  };
+
+  const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
@@ -845,7 +1076,7 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       event.target.value = '';
       setErrors((current) => ({
         ...current,
-        attachment: 'Image or PDF lang ang pwede i-upload.',
+        attachment: 'Image or PDF only.',
       }));
       return;
     }
@@ -854,23 +1085,42 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
       event.target.value = '';
       setErrors((current) => ({
         ...current,
-        attachment: `Hanggang ${MAX_ATTACHMENT_LABEL} lang ang pwede i-upload.`,
+        attachment: `Attachment cannot exceed ${MAX_ATTACHMENT_LABEL}.`,
       }));
       return;
     }
 
-    if (attachmentPreview?.url) {
-      URL.revokeObjectURL(attachmentPreview.url);
+    revokeAttachmentObjectUrl();
+    const isImage = isImageAttachment(file);
+    let previewUrl = '';
+    let isObjectUrl = false;
+
+    try {
+      if (isImage) {
+        previewUrl = await readFileAsDataUrl(file);
+      } else {
+        previewUrl = URL.createObjectURL(file);
+        attachmentObjectUrlRef.current = previewUrl;
+        isObjectUrl = true;
+      }
+    } catch {
+      event.target.value = '';
+      setErrors((current) => ({
+        ...current,
+        attachment: 'Unable to preview selected attachment.',
+      }));
+      return;
     }
 
-    setFormData((current) => ({ ...current, attachment: file.name }));
+    setFormData((current) => ({ ...current, attachment: file.name, attachmentUrl: '' }));
     setErrors((current) => ({ ...current, attachment: '' }));
     setAttachmentPreview({
       name: file.name,
       size: formatAttachmentSize(file.size),
       type: file.type || 'Document',
-      url: URL.createObjectURL(file),
-      isImage: isImageAttachment(file),
+      url: previewUrl,
+      isImage,
+      isObjectUrl,
     });
     setIsAttachmentViewerOpen(false);
   };
@@ -893,11 +1143,9 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
   };
 
   const handleRemoveAttachment = () => {
-    if (attachmentPreview?.url) {
-      URL.revokeObjectURL(attachmentPreview.url);
-    }
+    revokeAttachmentObjectUrl();
 
-    setFormData((current) => ({ ...current, attachment: '' }));
+    setFormData((current) => ({ ...current, attachment: '', attachmentUrl: '' }));
     setIsAttachmentViewerOpen(false);
     setAttachmentPreview(null);
     setErrors((current) => ({ ...current, attachment: '' }));
@@ -958,7 +1206,15 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
               <FormField label="Employee No" name="employeeNo" value={formData.employeeNo} onChange={updateForm} error={errors.employeeNo} readOnly required />
               <FormField label="Employee Name" name="employeeName" value={formData.employeeName} onChange={updateForm} error={errors.employeeName} readOnly required placeholder="Lastname, Firstname, Middle Initial" />
               {employeeError ? <div className="etr-expense-field-note">{employeeError}</div> : null}
-              <FormField label="Entry Date" name="date" type="date" value={formData.date} onChange={updateForm} readOnly={isReadOnlyDetail} />
+              <FormField
+                label="Entry Date"
+                name="date"
+                type="date"
+                value={formData.date}
+                onChange={updateForm}
+                error={errors.date}
+                readOnly
+              />
               <FormField label="Reference No" name="referenceNo" value={formData.referenceNo} onChange={updateForm} error={errors.referenceNo} readOnly placeholder="Generated on save" />
             </div>
           </section>
@@ -970,7 +1226,7 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
             </div>
             <div className="etr-expense-grid three">
               <FormField label="Receipt Date" name="receiptDate" type="date" value={formData.receiptDate} onChange={updateForm} error={errors.receiptDate} readOnly={isReadOnlyDetail} required />
-              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} readOnly={isReadOnlyDetail} placeholder="000-000-000-00000" />
+              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} error={errors.tinNo} readOnly={isReadOnlyDetail} placeholder="000-000-000-00000" />
               <FormField
                 label="OR/SI No"
                 name="orSiNo"
@@ -978,7 +1234,6 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
                 onChange={updateForm}
                 error={errors.orSiNo}
                 readOnly={isReadOnlyDetail}
-                maxLength={50}
               />
               <FormField
                 label="Document No"
@@ -987,7 +1242,6 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
                 onChange={updateForm}
                 error={errors.documentNo}
                 readOnly={isReadOnlyDetail}
-                maxLength={50}
               />
             </div>
           </section>
@@ -998,53 +1252,102 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
               <span>Classification and supporting notes</span>
             </div>
             <div className="etr-expense-grid details">
-              <FormField label="Expense Type" name="expenseType" value={formData.expenseType} onChange={updateForm} error={errors.expenseType} required>
-                <div className="etr-expense-combo">
-                  <button
-                    type="button"
-                    className={`etr-expense-lookup-button ${formData.expenseType ? 'has-value' : ''}`}
-                    onClick={() => {
-                      if (!isReadOnlyDetail) {
-                        setIsExpenseTypeLookupOpen((current) => !current);
-                      }
-                    }}
-                    aria-expanded={isExpenseTypeLookupOpen}
-                    aria-invalid={!!errors.expenseType}
-                    disabled={isReadOnlyDetail}
-                  >
-                    <span>{formData.expenseType || 'Select type'}</span>
-                    <ExpenseChevronIcon isOpen={isExpenseTypeLookupOpen} />
-                  </button>
+              <div className="etr-expense-details-left">
+                <FormField label="Expense Type" name="expenseType" value={formData.expenseType} onChange={updateForm} error={errors.expenseType} required>
+                  <div className="etr-expense-combo">
+                    <button
+                      type="button"
+                      className={`etr-expense-lookup-button ${formData.expenseType ? 'has-value' : ''}`}
+                      onClick={() => {
+                        if (!isReadOnlyDetail) {
+                          setIsExpenseTypeLookupOpen((current) => !current);
+                        }
+                      }}
+                      aria-expanded={isExpenseTypeLookupOpen}
+                      aria-invalid={!!errors.expenseType}
+                      disabled={isReadOnlyDetail}
+                    >
+                      <span>{formData.expenseType || 'Select type'}</span>
+                      <ExpenseChevronIcon isOpen={isExpenseTypeLookupOpen} />
+                    </button>
 
-                  {isExpenseTypeLookupOpen ? (
-                    <div className="etr-expense-combo-panel">
-                      <input
-                        value={expenseTypeQuery}
-                        onChange={(event) => setExpenseTypeQuery(event.target.value)}
-                        placeholder="Search code or description"
-                        autoFocus
-                      />
-                      <div className="etr-expense-combo-list">
-                        {isAccountTitlesLoading ? (
-                          <div className="etr-expense-combo-status">Loading account titles...</div>
-                        ) : null}
-                        {!isAccountTitlesLoading && accountTitlesError ? (
-                          <div className="etr-expense-combo-status is-error">{accountTitlesError}</div>
-                        ) : null}
-                        {!isAccountTitlesLoading && !accountTitlesError && filteredExpenseTypeRows.length === 0 ? (
-                          <div className="etr-expense-combo-status">No account titles found.</div>
-                        ) : null}
-                        {!isAccountTitlesLoading && !accountTitlesError ? filteredExpenseTypeRows.map((row) => (
-                          <button type="button" key={row.accountTitleId} onClick={() => handleSelectExpenseType(row)}>
-                            <span>{row.code}</span>
-                            <strong>{row.description}</strong>
-                          </button>
-                        )) : null}
+                    {isExpenseTypeLookupOpen ? (
+                      <div className="etr-expense-combo-panel">
+                        <input
+                          value={expenseTypeQuery}
+                          onChange={(event) => setExpenseTypeQuery(event.target.value)}
+                          placeholder="Search code or description"
+                          autoFocus
+                        />
+                        <div className="etr-expense-combo-list">
+                          {isAccountTitlesLoading ? (
+                            <div className="etr-expense-combo-status">Loading account titles...</div>
+                          ) : null}
+                          {!isAccountTitlesLoading && accountTitlesError ? (
+                            <div className="etr-expense-combo-status is-error">{accountTitlesError}</div>
+                          ) : null}
+                          {!isAccountTitlesLoading && !accountTitlesError && filteredExpenseTypeRows.length === 0 ? (
+                            <div className="etr-expense-combo-status">No account titles found.</div>
+                          ) : null}
+                          {!isAccountTitlesLoading && !accountTitlesError ? filteredExpenseTypeRows.map((row) => (
+                            <button type="button" key={row.accountTitleId} onClick={() => handleSelectExpenseType(row)}>
+                              <span>{row.code}</span>
+                              <strong>{row.description}</strong>
+                            </button>
+                          )) : null}
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
-                </div>
-              </FormField>
+                    ) : null}
+                  </div>
+                </FormField>
+
+                <FormField label="Subsidiary" name="subsidiary" value={formData.subsidiary} onChange={updateForm}>
+                  <div className="etr-expense-combo">
+                    <button
+                      type="button"
+                      className={`etr-expense-lookup-button ${formData.subsidiary ? 'has-value' : ''}`}
+                      onClick={() => {
+                        if (!isReadOnlyDetail) {
+                          setIsSubsidiaryLookupOpen((current) => !current);
+                        }
+                      }}
+                      aria-expanded={isSubsidiaryLookupOpen}
+                      disabled={isReadOnlyDetail}
+                    >
+                      <span>{formData.subsidiary || 'Select subsidiary'}</span>
+                      <ExpenseChevronIcon isOpen={isSubsidiaryLookupOpen} />
+                    </button>
+
+                    {isSubsidiaryLookupOpen ? (
+                      <div className="etr-expense-combo-panel">
+                        <input
+                          value={subsidiaryQuery}
+                          onChange={(event) => setSubsidiaryQuery(event.target.value)}
+                          placeholder="Search code or description"
+                          autoFocus
+                        />
+                        <div className="etr-expense-combo-list">
+                          {isSubsidiariesLoading ? (
+                            <div className="etr-expense-combo-status">Loading subsidiaries...</div>
+                          ) : null}
+                          {!isSubsidiariesLoading && subsidiariesError ? (
+                            <div className="etr-expense-combo-status is-error">{subsidiariesError}</div>
+                          ) : null}
+                          {!isSubsidiariesLoading && !subsidiariesError && filteredSubsidiaryRows.length === 0 ? (
+                            <div className="etr-expense-combo-status">No subsidiaries found.</div>
+                          ) : null}
+                          {!isSubsidiariesLoading && !subsidiariesError ? filteredSubsidiaryRows.map((row) => (
+                            <button type="button" key={row.costUnitId || `${row.code}-${row.description}`} onClick={() => handleSelectSubsidiary(row)}>
+                              <span>{row.code}</span>
+                              <strong>{row.description}</strong>
+                            </button>
+                          )) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </FormField>
+              </div>
               <label className={`etr-expense-field etr-expense-description ${errors.description ? 'has-error' : ''}`}>
                 <span>Particular/Description</span>
                 <textarea name="description" value={formData.description} onChange={updateForm} readOnly={isReadOnlyDetail} rows="4" aria-invalid={!!errors.description} />
@@ -1061,8 +1364,29 @@ export default function ExpenseEntryView({ user, selectedExpense = null, onBack 
               <span>Auto-computed total</span>
             </div>
             <div className="etr-expense-grid amount">
-              <FormField label="Amount" name="amount" type="number" value={formData.amount} onChange={updateForm} error={errors.amount} readOnly={isReadOnlyDetail} required />
-              <FormField label="VAT" name="vat" type="number" value={formData.vat} onChange={updateForm} readOnly={isReadOnlyDetail} />
+              <FormField
+                label="Amount"
+                name="amount"
+                type="text"
+                inputMode="decimal"
+                value={formData.amount}
+                onChange={updateForm}
+                onKeyDown={blockSignedExponentKeys}
+                error={errors.amount}
+                readOnly={isReadOnlyDetail}
+                required
+              />
+              <FormField
+                label="VAT"
+                name="vat"
+                type="text"
+                inputMode="decimal"
+                value={formData.vat}
+                onChange={updateForm}
+                onKeyDown={blockSignedExponentKeys}
+                error={errors.vat}
+                readOnly={isReadOnlyDetail}
+              />
               <FormField label="Total" name="total" value={formatTotal(total)} readOnly>
                 <input value={formatTotal(total)} readOnly className="etr-expense-total-input" />
               </FormField>

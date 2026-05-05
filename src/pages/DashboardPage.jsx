@@ -49,7 +49,7 @@ const sidebarSections = [
     title: 'Finance',
     children: [
       { id: 'daily-expense-manager', label: 'Daily Expense Manager', icon: 'table' },
-      { id: 'expense-entry', label: 'Expense Entry', icon: 'document' },
+      { id: 'expense-entry', label: 'Daily Expense Entry', icon: 'document' },
       { id: 'official-receipt', label: 'Official Receipt', icon: 'document' },
       { id: 'official-receipt-deductions', label: 'Official Receipt Deductions', icon: 'table' },
       { id: 'payable-entry', label: 'Payable Entry', icon: 'clipboard' },
@@ -72,6 +72,27 @@ const sidebarSections = [
     ],
   },
 ];
+
+function getClosedSidebarState(sections) {
+  const state = {};
+
+  const closeItems = (items) => {
+    items.forEach((item) => {
+      state[item.id] = false;
+
+      if (Array.isArray(item.children) && item.children.length > 0) {
+        closeItems(item.children);
+      }
+    });
+  };
+
+  sections.forEach((section) => {
+    state[section.id] = false;
+    closeItems(section.children);
+  });
+
+  return state;
+}
 
 function buildSearchIndex(sections) {
   const index = [];
@@ -253,18 +274,11 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
-  const [activeItemId, setActiveItemId] = useState('daily-expense-manager');
+  const [activeItemId, setActiveItemId] = useState('');
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [openSections, setOpenSections] = useState({
-    sales: false,
-    logistics: false,
-    inventory: false,
-    finance: true,
-    analytics: false,
-    'advanced-pricing': false,
-  });
+  const [openSections, setOpenSections] = useState(() => getClosedSidebarState(sidebarSections));
   const dragStateRef = useRef({
     isDragging: false,
     startX: 0,
