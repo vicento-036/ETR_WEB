@@ -4,6 +4,7 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
+const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
@@ -23,6 +24,7 @@ const dailyExpenseColumns = [
   'Reference No',
   'Receipt Date',
   'Expense Type',
+  'Cost Unit',
   'TIN No',
   'OR/SI No',
   'Document No',
@@ -41,6 +43,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0429-001',
     receiptDate: '04/28/2026',
     expenseType: 'Transportation',
+    costUnit: '',
     tinNo: '123-456-789-000',
     orSiNo: 'SI-009218',
     documentNo: 'DOC-58142',
@@ -57,6 +60,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0429-002',
     receiptDate: '04/29/2026',
     expenseType: 'Meals',
+    costUnit: '',
     tinNo: '987-654-321-000',
     orSiNo: 'OR-31874',
     documentNo: 'DOC-58143',
@@ -73,6 +77,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0428-006',
     receiptDate: '04/27/2026',
     expenseType: 'Supplies',
+    costUnit: '',
     tinNo: '456-120-884-000',
     orSiNo: 'SI-77105',
     documentNo: 'DOC-58131',
@@ -91,6 +96,7 @@ const dailyExpenseFieldKeys = [
   'referenceNo',
   'receiptDate',
   'expenseType',
+  'costUnit',
   'tinNo',
   'orSiNo',
   'documentNo',
@@ -109,6 +115,8 @@ const emptyExpenseForm = {
   receiptDate: '',
   expenseType: '',
   expenseTypeId: '',
+  costUnit: '',
+  costUnitId: '',
   tinNo: '',
   orSiNo: '',
   documentNo: '',
@@ -288,6 +296,24 @@ function normalizeAccountTitle(row) {
   };
 }
 
+function normalizeCostUnit(row) {
+  const costUnitId = getUserField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const code = getUserField(row, ['code', 'Code']);
+  const description = getUserField(row, ['description', 'Description', 'name', 'Name']);
+  const type = getUserField(row, ['type', 'Type']);
+
+  if (!costUnitId || !code || !description) {
+    return null;
+  }
+
+  return {
+    costUnitId,
+    code,
+    description,
+    type,
+  };
+}
+
 function normalizeEmployee(row) {
   if (!row) {
     return null;
@@ -365,14 +391,19 @@ export default function ExpenseEntryView({ user }) {
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
   const [accountTitlesError, setAccountTitlesError] = useState('');
+  const [costUnitRows, setCostUnitRows] = useState([]);
+  const [isCostUnitsLoading, setIsCostUnitsLoading] = useState(false);
+  const [costUnitsError, setCostUnitsError] = useState('');
   const [employeeError, setEmployeeError] = useState('');
   const [expenseRows, setExpenseRows] = useState(dailyExpenseRows);
   const [formData, setFormData] = useState(() => createExpenseForm(null, openedDateRef.current));
   const [errors, setErrors] = useState({});
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isExpenseTypeLookupOpen, setIsExpenseTypeLookupOpen] = useState(false);
+  const [isCostUnitLookupOpen, setIsCostUnitLookupOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
+  const [costUnitQuery, setCostUnitQuery] = useState('');
   const [page, setPage] = useState(1);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
@@ -396,6 +427,18 @@ export default function ExpenseEntryView({ user }) {
   });
   const filteredExpenseTypeRows = accountTitleRows.filter((row) => {
     const query = expenseTypeQuery.trim().toLowerCase();
+
+    if (!query) {
+      return true;
+    }
+
+    return [row.code, row.description]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+  const filteredCostUnitRows = costUnitRows.filter((row) => {
+    const query = costUnitQuery.trim().toLowerCase();
 
     if (!query) {
       return true;
@@ -447,6 +490,44 @@ export default function ExpenseEntryView({ user }) {
     };
 
     loadAccountTitles();
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadCostUnits = async () => {
+      setIsCostUnitsLoading(true);
+      setCostUnitsError('');
+
+      try {
+        const response = await fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Unable to load cost units.');
+        }
+
+        setCostUnitRows(getApiCollection(data).map(normalizeCostUnit).filter(Boolean));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setCostUnitRows([]);
+          setCostUnitsError(error.message || 'Unable to load cost units.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsCostUnitsLoading(false);
+        }
+      }
+    };
+
+    loadCostUnits();
 
     return () => controller.abort();
   }, []);
@@ -575,6 +656,7 @@ export default function ExpenseEntryView({ user }) {
     if (!formData.employeeName.trim()) nextErrors.employeeName = 'Employee name is required.';
     if (formData.employeeName && /[0-9]/.test(formData.employeeName)) nextErrors.employeeName = 'Employee name cannot contain numbers.';
     if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
+    if (!formData.costUnit.trim() || !formData.costUnitId) nextErrors.costUnit = 'Select a cost unit.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
@@ -616,6 +698,7 @@ export default function ExpenseEntryView({ user }) {
           total,
           tin: formData.tinNo.trim(),
           vendorID: null,
+          costUnitID: Number(formData.costUnitId),
           expenseType: Number(formData.expenseTypeId),
           attachment: formData.attachment || '',
         }),
@@ -639,6 +722,7 @@ export default function ExpenseEntryView({ user }) {
         referenceNo: responseReferenceNo,
         receiptDate: formatDateForTable(formData.receiptDate),
         expenseType: formData.expenseType,
+        costUnit: formData.costUnit,
         tinNo: formData.tinNo.trim(),
         orSiNo: formData.orSiNo.trim(),
         documentNo: formData.documentNo.trim(),
@@ -696,6 +780,22 @@ export default function ExpenseEntryView({ user }) {
     setErrors((current) => ({ ...current, expenseType: '' }));
     setExpenseTypeQuery('');
     setIsExpenseTypeLookupOpen(false);
+  };
+
+  const handleSelectCostUnit = (row) => {
+    if (!row.costUnitId) {
+      setErrors((current) => ({ ...current, costUnit: 'Selected cost unit has no CostUnitID.' }));
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      costUnit: `${row.code} - ${row.description}`,
+      costUnitId: row.costUnitId,
+    }));
+    setErrors((current) => ({ ...current, costUnit: '' }));
+    setCostUnitQuery('');
+    setIsCostUnitLookupOpen(false);
   };
 
   const handleFileChange = (event) => {
@@ -869,6 +969,48 @@ export default function ExpenseEntryView({ user }) {
                         ) : null}
                         {!isAccountTitlesLoading && !accountTitlesError ? filteredExpenseTypeRows.map((row) => (
                           <button type="button" key={row.accountTitleId} onClick={() => handleSelectExpenseType(row)}>
+                            <span>{row.code}</span>
+                            <strong>{row.description}</strong>
+                          </button>
+                        )) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </FormField>
+              <FormField label="Cost Unit" name="costUnit" value={formData.costUnit} onChange={updateForm} error={errors.costUnit} required>
+                <div className="etr-expense-combo">
+                  <button
+                    type="button"
+                    className={`etr-expense-lookup-button ${formData.costUnit ? 'has-value' : ''}`}
+                    onClick={() => setIsCostUnitLookupOpen((current) => !current)}
+                    aria-expanded={isCostUnitLookupOpen}
+                    aria-invalid={!!errors.costUnit}
+                  >
+                    <span>{formData.costUnit || 'Select cost unit'}</span>
+                    <ExpenseChevronIcon isOpen={isCostUnitLookupOpen} />
+                  </button>
+
+                  {isCostUnitLookupOpen ? (
+                    <div className="etr-expense-combo-panel">
+                      <input
+                        value={costUnitQuery}
+                        onChange={(event) => setCostUnitQuery(event.target.value)}
+                        placeholder="Search code or description"
+                        autoFocus
+                      />
+                      <div className="etr-expense-combo-list">
+                        {isCostUnitsLoading ? (
+                          <div className="etr-expense-combo-status">Loading cost units...</div>
+                        ) : null}
+                        {!isCostUnitsLoading && costUnitsError ? (
+                          <div className="etr-expense-combo-status is-error">{costUnitsError}</div>
+                        ) : null}
+                        {!isCostUnitsLoading && !costUnitsError && filteredCostUnitRows.length === 0 ? (
+                          <div className="etr-expense-combo-status">No cost units found.</div>
+                        ) : null}
+                        {!isCostUnitsLoading && !costUnitsError ? filteredCostUnitRows.map((row) => (
+                          <button type="button" key={row.costUnitId} onClick={() => handleSelectCostUnit(row)}>
                             <span>{row.code}</span>
                             <strong>{row.description}</strong>
                           </button>

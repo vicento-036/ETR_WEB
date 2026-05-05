@@ -181,6 +181,15 @@
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+.etr-profile-select {
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, #6f88a3 50%) calc(100% - 20px) 31px / 6px 6px no-repeat,
+    linear-gradient(135deg, #6f88a3 50%, transparent 50%) calc(100% - 14px) 31px / 6px 6px no-repeat,
+    linear-gradient(180deg, #f0f7fd 0%, #dfeffc 100%);
+  padding-right: 42px;
+}
+
 .etr-form-input:focus {
   border-color: #2f80c3;
   box-shadow: 0 0 0 4px rgba(47, 128, 195, 0.14);
