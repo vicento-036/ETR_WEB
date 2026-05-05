@@ -4,6 +4,7 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
+const COST_UNITS_ENDPOINT = '/api/costunits';
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 8;
 
@@ -104,9 +105,25 @@ function getVisiblePages(currentPage, totalPages) {
   return Array.from({ length: visibleCount }, (_, index) => start + index);
 }
 
-function normalizeDailyExpense(row) {
+function normalizeCostUnit(row) {
+  const costUnitId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code']);
+  const description = getField(row, ['description', 'Description']);
+
+  if (!costUnitId || !code || !description) {
+    return null;
+  }
+
+  return {
+    costUnitId: String(costUnitId),
+    display: `${code} - ${description}`,
+  };
+}
+
+function normalizeDailyExpense(row, subsidiaryById = new Map()) {
   const expenseDate = getField(row, ['expenseDate', 'ExpenseDate', 'date', 'Date']);
   const receiptDate = getField(row, ['receiptDate', 'ReceiptDate']);
+  const subsidiaryId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'subsidiaryId', 'SubsidiaryId']);
 
   const expenseTypeDisplay =
     getField(row, ['expenseTypeDisplay', 'ExpenseTypeDisplay'])
@@ -115,6 +132,14 @@ function normalizeDailyExpense(row) {
       getField(row, ['expenseTypeDescription', 'ExpenseTypeDescription']),
     ].filter(Boolean).join(' - ')
     || getField(row, ['expenseType', 'ExpenseType']);
+  const subsidiaryDisplay =
+    getField(row, ['subsidiaryDisplay', 'SubsidiaryDisplay'])
+    || [
+      getField(row, ['subsidiaryCode', 'SubsidiaryCode', 'costUnitCode', 'CostUnitCode']),
+      getField(row, ['subsidiaryDescription', 'SubsidiaryDescription', 'costUnitDescription', 'CostUnitDescription']),
+    ].filter(Boolean).join(' - ')
+    || subsidiaryById.get(String(subsidiaryId))
+    || getField(row, ['subsidiary', 'Subsidiary', 'costUnit', 'CostUnit']);
 
   return {
     expenseId: getField(row, ['expenseID', 'expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']),
@@ -128,6 +153,8 @@ function normalizeDailyExpense(row) {
     receiptDateInput: formatDateForInput(receiptDate),
     expenseType: expenseTypeDisplay,
     expenseTypeId: getField(row, ['expenseType', 'ExpenseType']),
+    subsidiary: subsidiaryDisplay,
+    subsidiaryId,
     tinNo: getField(row, ['tin', 'TIN', 'tinNo', 'TinNo', 'TINNo']),
     orSiNo: getField(row, ['orSINo', 'orsiNo', 'orSiNo', 'orSI_No', 'or_si_no', 'ORSINo', 'ORSI_No', 'OrSiNo']),
     documentNo: getField(row, ['documentNo', 'DocumentNo']),
@@ -151,6 +178,7 @@ const columns = [
   { key: 'referenceNo', label: 'Reference No' },
   { key: 'receiptDate', label: 'Receipt Date' },
   { key: 'expenseType', label: 'Expense Type' },
+  { key: 'subsidiary', label: 'Subsidiary' },
   { key: 'tinNo', label: 'TIN No' },
   { key: 'orSiNo', label: 'OR/SI No' },
   { key: 'documentNo', label: 'Document No' },
@@ -178,18 +206,37 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
       setLoadError('');
 
       try {
-        const response = await fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
-        });
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [expenseResponse, costUnitResponse] = await Promise.all([
+          fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
+            headers,
+            signal: controller.signal,
+          }),
+          fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
+            headers,
+            signal: controller.signal,
+          }),
+        ]);
 
-        const data = await response.json().catch(() => ({}));
+        const expenseData = await expenseResponse.json().catch(() => ({}));
+        const costUnitData = await costUnitResponse.json().catch(() => ({}));
 
-        if (!response.ok) {
-          throw new Error(data?.message || 'Unable to load daily expense transactions.');
+        if (!expenseResponse.ok) {
+          throw new Error(expenseData?.message || 'Unable to load daily expense transactions.');
         }
 
-        setRows(getApiCollection(data).map(normalizeDailyExpense));
+        if (!costUnitResponse.ok) {
+          throw new Error(costUnitData?.message || 'Unable to load subsidiaries.');
+        }
+
+        const subsidiaryById = new Map(
+          getApiCollection(costUnitData)
+            .map(normalizeCostUnit)
+            .filter(Boolean)
+            .map((item) => [item.costUnitId, item.display])
+        );
+
+        setRows(getApiCollection(expenseData).map((row) => normalizeDailyExpense(row, subsidiaryById)));
       } catch (error) {
         if (error.name !== 'AbortError') {
           setRows([]);

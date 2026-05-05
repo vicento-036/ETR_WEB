@@ -4,7 +4,7 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
-const SUBSIDIARY_ENDPOINT = '/api/subsidiary';
+const SUBSIDIARY_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
@@ -838,6 +838,7 @@ export default function ExpenseEntryView({
     if (!formData.date) nextErrors.date = 'Entry Date is required.';
     if (isFutureIsoDate(formData.date)) nextErrors.date = 'Entry Date cannot be later than today.';
     if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
+    if (!formData.subsidiary.trim() || !formData.subsidiaryId) nextErrors.subsidiary = 'Select a subsidiary.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (isFutureIsoDate(formData.receiptDate)) nextErrors.receiptDate = 'Receipt Date cannot be later than today.';
@@ -846,6 +847,7 @@ export default function ExpenseEntryView({
     if (formData.orSiNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.orSiNo = `OR/SI No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
     if (formData.documentNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.documentNo = `Document No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
     if (formData.description.length > MAX_DESCRIPTION_LENGTH) nextErrors.description = `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
+    if (!formData.attachment.trim()) nextErrors.attachment = 'Attachment is required.';
     if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
     
     const amount = parseMoney(formData.amount);
@@ -885,6 +887,7 @@ export default function ExpenseEntryView({
           tin: formData.tinNo.trim(),
           vendorID: null,
           expenseType: Number(formData.expenseTypeId),
+          costUnitID: Number(formData.subsidiaryId),
           attachment: formData.attachment || '',
         }),
       });
@@ -907,6 +910,8 @@ export default function ExpenseEntryView({
         referenceNo: responseReferenceNo,
         receiptDate: formatDateForTable(formData.receiptDate),
         expenseType: formData.expenseType,
+        subsidiary: formData.subsidiary,
+        subsidiaryId: formData.subsidiaryId,
         tinNo: formData.tinNo.trim(),
         orSiNo: formData.orSiNo.trim(),
         documentNo: formData.documentNo.trim(),
@@ -952,6 +957,7 @@ export default function ExpenseEntryView({
     tin: formData.tinNo.trim(),
     vendorID: null,
     expenseType: Number(formData.expenseTypeId),
+    costUnitID: Number(formData.subsidiaryId),
     attachment: formData.attachment || '',
     status,
   });
@@ -1057,11 +1063,17 @@ export default function ExpenseEntryView({
   };
 
   const handleSelectSubsidiary = (row) => {
+    if (!row.costUnitId) {
+      setErrors((current) => ({ ...current, subsidiary: 'Selected subsidiary has no CostUnitID.' }));
+      return;
+    }
+
     setFormData((current) => ({
       ...current,
       subsidiary: `${row.code} - ${row.description}`,
       subsidiaryId: row.costUnitId,
     }));
+    setErrors((current) => ({ ...current, subsidiary: '' }));
     setSubsidiaryQuery('');
     setIsSubsidiaryLookupOpen(false);
   };
@@ -1301,7 +1313,7 @@ export default function ExpenseEntryView({
                   </div>
                 </FormField>
 
-                <FormField label="Subsidiary" name="subsidiary" value={formData.subsidiary} onChange={updateForm}>
+                <FormField label="Subsidiary" name="subsidiary" value={formData.subsidiary} onChange={updateForm} error={errors.subsidiary}>
                   <div className="etr-expense-combo">
                     <button
                       type="button"
@@ -1323,7 +1335,7 @@ export default function ExpenseEntryView({
                         <input
                           value={subsidiaryQuery}
                           onChange={(event) => setSubsidiaryQuery(event.target.value)}
-                          placeholder="Search code or description"
+                          placeholder="Search subsidiary code or subsidiary description"
                           autoFocus
                         />
                         <div className="etr-expense-combo-list">
