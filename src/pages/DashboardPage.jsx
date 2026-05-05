@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ExpenseEntryView from '../features/expenses/ExpenseEntry';
 
 const sidebarSections = [
@@ -70,6 +70,48 @@ const sidebarSections = [
     ],
   },
 ];
+
+function buildSearchIndex(sections) {
+  const index = [];
+
+  const walkItems = (items, section, parents = []) => {
+    items.forEach((item) => {
+      const parentLabels = parents.map((parent) => parent.label);
+      const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+
+      index.push({
+        id: item.id,
+        label: item.label,
+        sectionId: section.id,
+        sectionTitle: section.title,
+        parentIds: [section.id, ...parents.map((parent) => parent.id)],
+        path: [section.title, ...parentLabels, item.label].join(' / '),
+        keywords: [section.title, ...parentLabels, item.label, item.id].join(' ').toLowerCase(),
+        isSelectable: !hasChildren,
+      });
+
+      if (hasChildren) {
+        walkItems(item.children, section, [...parents, item]);
+      }
+    });
+  };
+
+  sections.forEach((section) => {
+    index.push({
+      id: section.id,
+      label: section.title,
+      sectionId: section.id,
+      sectionTitle: section.title,
+      parentIds: [],
+      path: section.title,
+      keywords: `${section.title} ${section.id}`.toLowerCase(),
+      isSelectable: false,
+    });
+    walkItems(section.children, section);
+  });
+
+  return index;
+}
 
 function SidebarIcon({ type }) {
   const icons = {
@@ -194,6 +236,8 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
   const [activeItemId, setActiveItemId] = useState('expense-entry');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openSections, setOpenSections] = useState({
     sales: false,
     logistics: false,
@@ -207,8 +251,26 @@ function DashboardPage({ user, onLogout }) {
     startX: 0,
     startWidth: 398,
   });
+  const searchBlurTimeoutRef = useRef(null);
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
+  const searchIndex = useMemo(() => buildSearchIndex(sidebarSections), []);
+  const trimmedSearchQuery = searchQuery.trim().toLowerCase();
+  const searchResults = useMemo(() => {
+    if (!trimmedSearchQuery) {
+      return [];
+    }
+
+    return searchIndex
+      .filter((entry) => entry.keywords.includes(trimmedSearchQuery))
+      .sort((first, second) => {
+        const firstStartsWith = first.label.toLowerCase().startsWith(trimmedSearchQuery) ? 0 : 1;
+        const secondStartsWith = second.label.toLowerCase().startsWith(trimmedSearchQuery) ? 0 : 1;
+
+        return firstStartsWith - secondStartsWith || first.path.localeCompare(second.path);
+      })
+      .slice(0, 8);
+  }, [searchIndex, trimmedSearchQuery]);
 
   const toggleSection = (sectionId) => {
     setOpenSections((current) => ({
@@ -247,6 +309,12 @@ function DashboardPage({ user, onLogout }) {
     };
   }, []);
 
+  useEffect(() => () => {
+    if (searchBlurTimeoutRef.current) {
+      window.clearTimeout(searchBlurTimeoutRef.current);
+    }
+  }, []);
+
   const handleResizeStart = (event) => {
     dragStateRef.current = {
       isDragging: true,
@@ -260,6 +328,59 @@ function DashboardPage({ user, onLogout }) {
 
   const handleShowSidebar = () => {
     setSidebarWidth(sidebarWidth > 0 ? 0 : 398);
+  };
+
+  const handleSelectSearchResult = (entry) => {
+    setOpenSections((current) => {
+      const nextOpenSections = { ...current, [entry.sectionId]: true };
+
+      entry.parentIds.forEach((parentId) => {
+        nextOpenSections[parentId] = true;
+      });
+
+      if (!entry.isSelectable) {
+        nextOpenSections[entry.id] = true;
+      }
+
+      return nextOpenSections;
+    });
+
+    if (entry.isSelectable) {
+      setActiveItemId(entry.id);
+    }
+
+    if (sidebarWidth <= 0) {
+      setSidebarWidth(398);
+    }
+
+    setSearchQuery('');
+    setIsSearchOpen(false);
+  };
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key === 'Enter' && searchResults.length > 0) {
+      event.preventDefault();
+      handleSelectSearchResult(searchResults[0]);
+    }
+
+    if (event.key === 'Escape') {
+      setSearchQuery('');
+      setIsSearchOpen(false);
+    }
+  };
+
+  const handleSearchBlur = () => {
+    searchBlurTimeoutRef.current = window.setTimeout(() => {
+      setIsSearchOpen(false);
+    }, 120);
+  };
+
+  const handleSearchFocus = () => {
+    if (searchBlurTimeoutRef.current) {
+      window.clearTimeout(searchBlurTimeoutRef.current);
+    }
+
+    setIsSearchOpen(true);
   };
 
   return (
@@ -278,12 +399,43 @@ function DashboardPage({ user, onLogout }) {
 
         <div className="etr-dashboard-brand">ETRIS INTEGRATED SYSTEM</div>
 
-        <label className="etr-dashboard-search">
+        <div className="etr-dashboard-search" role="search">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm0-2a8 8 0 1 0 4.9 14.3l4.4 4.4 1.4-1.4-4.4-4.4A8 8 0 0 0 10 2Z" />
           </svg>
-          <input type="text" placeholder="Search module, document, or transaction" />
-        </label>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setIsSearchOpen(true);
+            }}
+            onFocus={handleSearchFocus}
+            onBlur={handleSearchBlur}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search module, document, or transaction"
+            aria-expanded={isSearchOpen && !!trimmedSearchQuery}
+            aria-controls="etr-dashboard-search-results"
+          />
+
+          {isSearchOpen && trimmedSearchQuery ? (
+            <div className="etr-dashboard-search-results" id="etr-dashboard-search-results">
+              {searchResults.length > 0 ? searchResults.map((entry) => (
+                <button
+                  type="button"
+                  key={entry.path}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleSelectSearchResult(entry)}
+                >
+                  <strong>{entry.label}</strong>
+                  <span>{entry.path}</span>
+                </button>
+              )) : (
+                <div className="etr-dashboard-search-empty">No matching modules found.</div>
+              )}
+            </div>
+          ) : null}
+        </div>
 
         <div className="etr-dashboard-account-wrap">
           <div className="etr-dashboard-avatar">{userInitials}</div>
