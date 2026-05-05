@@ -327,6 +327,30 @@ function createExpenseForm(user, isoDate = getTodayIsoDate()) {
   };
 }
 
+function createExpenseFormFromRecord(record) {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...emptyExpenseForm,
+    employeeNo: record.employeeCode || record.employeeNo || '',
+    employeeName: record.employeeName || '',
+    date: record.dateInput || '',
+    referenceNo: record.referenceNo || '',
+    receiptDate: record.receiptDateInput || '',
+    expenseType: String(record.expenseType || ''),
+    expenseTypeId: record.expenseTypeId || '',
+    tinNo: record.tinNo || '',
+    orSiNo: record.orSiNo || '',
+    documentNo: record.documentNo || '',
+    description: record.description || '',
+    amount: String(record.amountValue ?? record.amount ?? '').replace(/,/g, ''),
+    vat: String(record.vatValue ?? record.vat ?? '').replace(/,/g, ''),
+    attachment: record.attachment || '',
+  };
+}
+
 function ExpenseChevronIcon({ isOpen }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={`etr-expense-chevron ${isOpen ? 'is-open' : ''}`}>
@@ -358,7 +382,7 @@ function FormField({ label, name, value, onChange, error, type = 'text', childre
   );
 }
 
-export default function ExpenseEntryView({ user }) {
+export default function ExpenseEntryView({ user, selectedExpense = null, onBack }) {
   const openedDateRef = useRef(getTodayIsoDate());
   const attachmentInputRef = useRef(null);
   const [employeeInfo, setEmployeeInfo] = useState(null);
@@ -379,6 +403,11 @@ export default function ExpenseEntryView({ user }) {
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingDetail, setIsEditingDetail] = useState(false);
+  const [detailStatus, setDetailStatus] = useState('');
+  const isDetailMode = !!selectedExpense;
+  const isApprovedDetail = detailStatus.toLowerCase() === 'approved';
+  const isReadOnlyDetail = isDetailMode && (!isEditingDetail || isApprovedDetail);
   const total = parseMoney(formData.amount) + parseMoney(formData.vat);
   const pageSize = 2;
   const totalPages = Math.max(1, Math.ceil(expenseRows.length / pageSize));
@@ -491,12 +520,32 @@ export default function ExpenseEntryView({ user }) {
   }, [user]);
 
   useEffect(() => {
+    if (selectedExpense) {
+      setFormData(createExpenseFormFromRecord(selectedExpense));
+      setErrors({});
+      setSaveError('');
+      setSaveMessage('');
+      setIsEditingDetail(false);
+      setDetailStatus(selectedExpense.status || 'Pending');
+      setIsAttachmentViewerOpen(false);
+      setAttachmentPreview(null);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = '';
+      }
+    }
+  }, [selectedExpense]);
+
+  useEffect(() => {
+    if (selectedExpense) {
+      return;
+    }
+
     setFormData((current) => ({
       ...current,
       employeeNo: employeeInfo ? getEmployeeNo(employeeInfo) : '',
       employeeName: employeeInfo ? getEmployeeName(employeeInfo) : '',
     }));
-  }, [employeeInfo, user]);
+  }, [employeeInfo, selectedExpense, user]);
 
   const updateForm = (event) => {
     const { name, value } = event.target;
@@ -578,7 +627,7 @@ export default function ExpenseEntryView({ user }) {
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
-    if (formData.attachment && !attachmentPreview) nextErrors.attachment = 'Attach an image or PDF file.';
+    if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
     
     const amount = parseMoney(formData.amount);
     const vat = parseMoney(formData.vat);
@@ -665,6 +714,94 @@ export default function ExpenseEntryView({ user }) {
       setSaveMessage(data.message || 'Daily expense saved successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to save daily expense.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const buildUpdatePayload = (status) => ({
+    expenseID: Number(selectedExpense?.expenseId),
+    expenseDate: formData.date,
+    receiptDate: formData.receiptDate || null,
+    orSINo: formData.orSiNo.trim(),
+    documentNo: formData.documentNo.trim(),
+    description: formData.description.trim(),
+    amount: parseMoney(formData.amount),
+    vat: parseMoney(formData.vat),
+    total,
+    tin: formData.tinNo.trim(),
+    vendorID: null,
+    expenseType: Number(formData.expenseTypeId),
+    attachment: formData.attachment || '',
+    status,
+  });
+
+  const handleUpdateDetail = async () => {
+    if (!selectedExpense?.expenseId || !validateForm()) {
+      return;
+    }
+
+    const token = getToken();
+    setIsSaving(true);
+    setSaveMessage('');
+    setSaveError('');
+
+    try {
+      const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${selectedExpense.expenseId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(buildUpdatePayload(detailStatus || selectedExpense.status || 'Pending')),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(getValidationMessage(data));
+      }
+
+      setIsEditingDetail(false);
+      setSaveMessage(data.message || 'Daily expense updated successfully.');
+    } catch (error) {
+      setSaveError(error.message || 'Unable to update daily expense.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedExpense?.expenseId || !validateForm()) {
+      return;
+    }
+
+    const token = getToken();
+    setIsSaving(true);
+    setSaveMessage('');
+    setSaveError('');
+
+    try {
+      const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${selectedExpense.expenseId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(buildUpdatePayload('Approved')),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(getValidationMessage(data));
+      }
+
+      setIsEditingDetail(false);
+      setDetailStatus('Approved');
+      setSaveMessage(data.message || 'Daily expense approved successfully.');
+    } catch (error) {
+      setSaveError(error.message || 'Unable to approve daily expense.');
     } finally {
       setIsSaving(false);
     }
@@ -775,12 +912,35 @@ export default function ExpenseEntryView({ user }) {
         <div>
           <p className="etr-expense-kicker">Finance</p>
           <h1>Daily Expense Entry</h1>
-          <span>Add-only expense capture. Updates require approval from accounting.</span>
+          <span>{isDetailMode ? 'Transaction details from Daily Expense Manager.' : 'Add-only expense capture. Updates require approval from accounting.'}</span>
         </div>
 
         <div className="etr-expense-actions">
-          <button type="button" onClick={handleClear} disabled={isSaving}>New</button>
-          <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+          {isDetailMode ? (
+            <>
+              <button type="button" onClick={onBack} disabled={isSaving}>Back</button>
+              {!isApprovedDetail ? (
+                <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSaving}>
+                  {isEditingDetail ? 'Cancel Edit' : 'Edit'}
+                </button>
+              ) : null}
+              {isEditingDetail && !isApprovedDetail ? (
+                <button type="button" className="etr-expense-save-button" onClick={handleUpdateDetail} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+              ) : null}
+              {!isApprovedDetail ? (
+                <button type="button" className="etr-expense-save-button" onClick={handleApprove} disabled={isSaving}>
+                  {isSaving ? 'Approving...' : 'Approve'}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={handleClear} disabled={isSaving}>New</button>
+              <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -798,7 +958,7 @@ export default function ExpenseEntryView({ user }) {
               <FormField label="Employee No" name="employeeNo" value={formData.employeeNo} onChange={updateForm} error={errors.employeeNo} readOnly required />
               <FormField label="Employee Name" name="employeeName" value={formData.employeeName} onChange={updateForm} error={errors.employeeName} readOnly required placeholder="Lastname, Firstname, Middle Initial" />
               {employeeError ? <div className="etr-expense-field-note">{employeeError}</div> : null}
-              <FormField label="Entry Date" name="date" type="date" value={formData.date} onChange={updateForm} />
+              <FormField label="Entry Date" name="date" type="date" value={formData.date} onChange={updateForm} readOnly={isReadOnlyDetail} />
               <FormField label="Reference No" name="referenceNo" value={formData.referenceNo} onChange={updateForm} error={errors.referenceNo} readOnly placeholder="Generated on save" />
             </div>
           </section>
@@ -809,14 +969,15 @@ export default function ExpenseEntryView({ user }) {
               <span>Receipt and tax references</span>
             </div>
             <div className="etr-expense-grid three">
-              <FormField label="Receipt Date" name="receiptDate" type="date" value={formData.receiptDate} onChange={updateForm} error={errors.receiptDate} required />
-              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} placeholder="000-000-000-00000" />
+              <FormField label="Receipt Date" name="receiptDate" type="date" value={formData.receiptDate} onChange={updateForm} error={errors.receiptDate} readOnly={isReadOnlyDetail} required />
+              <FormField label="TIN No" name="tinNo" value={formData.tinNo} onChange={updateForm} readOnly={isReadOnlyDetail} placeholder="000-000-000-00000" />
               <FormField
                 label="OR/SI No"
                 name="orSiNo"
                 value={formData.orSiNo}
                 onChange={updateForm}
                 error={errors.orSiNo}
+                readOnly={isReadOnlyDetail}
                 maxLength={50}
               />
               <FormField
@@ -825,6 +986,7 @@ export default function ExpenseEntryView({ user }) {
                 value={formData.documentNo}
                 onChange={updateForm}
                 error={errors.documentNo}
+                readOnly={isReadOnlyDetail}
                 maxLength={50}
               />
             </div>
@@ -841,9 +1003,14 @@ export default function ExpenseEntryView({ user }) {
                   <button
                     type="button"
                     className={`etr-expense-lookup-button ${formData.expenseType ? 'has-value' : ''}`}
-                    onClick={() => setIsExpenseTypeLookupOpen((current) => !current)}
+                    onClick={() => {
+                      if (!isReadOnlyDetail) {
+                        setIsExpenseTypeLookupOpen((current) => !current);
+                      }
+                    }}
                     aria-expanded={isExpenseTypeLookupOpen}
                     aria-invalid={!!errors.expenseType}
+                    disabled={isReadOnlyDetail}
                   >
                     <span>{formData.expenseType || 'Select type'}</span>
                     <ExpenseChevronIcon isOpen={isExpenseTypeLookupOpen} />
@@ -880,7 +1047,7 @@ export default function ExpenseEntryView({ user }) {
               </FormField>
               <label className={`etr-expense-field etr-expense-description ${errors.description ? 'has-error' : ''}`}>
                 <span>Particular/Description</span>
-                <textarea name="description" value={formData.description} onChange={updateForm} rows="4" aria-invalid={!!errors.description} />
+                <textarea name="description" value={formData.description} onChange={updateForm} readOnly={isReadOnlyDetail} rows="4" aria-invalid={!!errors.description} />
                 {errors.description ? <small>{errors.description}</small> : null}
               </label>
             </div>
@@ -894,8 +1061,8 @@ export default function ExpenseEntryView({ user }) {
               <span>Auto-computed total</span>
             </div>
             <div className="etr-expense-grid amount">
-              <FormField label="Amount" name="amount" type="number" value={formData.amount} onChange={updateForm} error={errors.amount} required />
-              <FormField label="VAT" name="vat" type="number" value={formData.vat} onChange={updateForm} />
+              <FormField label="Amount" name="amount" type="number" value={formData.amount} onChange={updateForm} error={errors.amount} readOnly={isReadOnlyDetail} required />
+              <FormField label="VAT" name="vat" type="number" value={formData.vat} onChange={updateForm} readOnly={isReadOnlyDetail} />
               <FormField label="Total" name="total" value={formatTotal(total)} readOnly>
                 <input value={formatTotal(total)} readOnly className="etr-expense-total-input" />
               </FormField>
@@ -913,8 +1080,9 @@ export default function ExpenseEntryView({ user }) {
                 type="file"
                 accept={ATTACHMENT_ACCEPT}
                 onChange={handleFileChange}
+                disabled={isReadOnlyDetail}
               />
-              <span>Upload receipt or invoice</span>
+              <span>{isReadOnlyDetail ? 'Uploaded receipt or invoice' : 'Upload receipt or invoice'}</span>
               <strong>{formData.attachment || 'No file selected'}</strong>
             </label>
             {errors.attachment ? <small className="etr-expense-upload-error">{errors.attachment}</small> : null}
@@ -941,7 +1109,7 @@ export default function ExpenseEntryView({ user }) {
                 </div>
               )}
             </button>
-            {formData.attachment ? (
+            {formData.attachment && !isReadOnlyDetail ? (
               <div className="etr-expense-attachment-actions">
                 <button type="button" onClick={handleChooseAttachment}>Change</button>
                 <button type="button" onClick={handleRemoveAttachment}>Remove</button>
@@ -950,7 +1118,7 @@ export default function ExpenseEntryView({ user }) {
           </section>
 
           <div className="etr-expense-approval-note">
-            Existing expense records are view-only. Changes must go through approval.
+            {isDetailMode ? `Current status: ${detailStatus || selectedExpense?.status || 'Pending'}` : 'Existing expense records are view-only. Changes must go through approval.'}
           </div>
         </aside>
       </div>

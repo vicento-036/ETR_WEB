@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DailyExpenseManager from '../features/expenses/DailyExpenseManager';
 import ExpenseEntryView from '../features/expenses/ExpenseEntry';
 
 const sidebarSections = [
@@ -47,6 +48,7 @@ const sidebarSections = [
     id: 'finance',
     title: 'Finance',
     children: [
+      { id: 'daily-expense-manager', label: 'Daily Expense Manager', icon: 'table' },
       { id: 'expense-entry', label: 'Expense Entry', icon: 'document' },
       { id: 'official-receipt', label: 'Official Receipt', icon: 'document' },
       { id: 'official-receipt-deductions', label: 'Official Receipt Deductions', icon: 'table' },
@@ -174,9 +176,25 @@ function getUserDisplayName(user) {
   return user.username || 'Executive Service Account';
 }
 
-function DashboardContent({ activeItemId, user }) {
+function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onOpenExpense, onBackToManager }) {
+  if (activeItemId === 'daily-expense-manager') {
+    return (
+      <DailyExpenseManager
+        user={user}
+        onNewEntry={() => {
+          onOpenExpense(null);
+          onNavigate('expense-entry');
+        }}
+        onOpenExpense={(expense) => {
+          onOpenExpense(expense);
+          onNavigate('expense-entry');
+        }}
+      />
+    );
+  }
+
   if (activeItemId === 'expense-entry') {
-    return <ExpenseEntryView user={user} />;
+    return <ExpenseEntryView user={user} selectedExpense={selectedExpense} onBack={onBackToManager} />;
   }
 
   return (
@@ -235,7 +253,8 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 
 function DashboardPage({ user, onLogout }) {
   const [sidebarWidth, setSidebarWidth] = useState(398);
-  const [activeItemId, setActiveItemId] = useState('expense-entry');
+  const [activeItemId, setActiveItemId] = useState('daily-expense-manager');
+  const [selectedExpense, setSelectedExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openSections, setOpenSections] = useState({
@@ -496,7 +515,17 @@ function DashboardPage({ user, onLogout }) {
         <section className="etr-dashboard-main">
           <div className="etr-dashboard-canvas">
             <div className="etr-dashboard-content">
-              <DashboardContent activeItemId={activeItemId} user={user} />
+              <DashboardContent
+                activeItemId={activeItemId}
+                user={user}
+                selectedExpense={selectedExpense}
+                onNavigate={setActiveItemId}
+                onOpenExpense={setSelectedExpense}
+                onBackToManager={() => {
+                  setSelectedExpense(null);
+                  setActiveItemId('daily-expense-manager');
+                }}
+              />
             </div>
           </div>
         </section>
