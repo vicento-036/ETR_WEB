@@ -4,7 +4,7 @@ import './ExpenseEntry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
-const SUBSIDIARY_ENDPOINT = '/api/costunits';
+const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
@@ -27,6 +27,7 @@ const dailyExpenseColumns = [
   'Reference No',
   'Receipt Date',
   'Expense Type',
+  'Cost Unit',
   'TIN No',
   'OR/SI No',
   'Document No',
@@ -45,6 +46,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0429-001',
     receiptDate: '04/28/2026',
     expenseType: 'Transportation',
+    costUnit: '',
     tinNo: '123-456-789-000',
     orSiNo: 'SI-009218',
     documentNo: 'DOC-58142',
@@ -61,6 +63,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0429-002',
     receiptDate: '04/29/2026',
     expenseType: 'Meals',
+    costUnit: '',
     tinNo: '987-654-321-000',
     orSiNo: 'OR-31874',
     documentNo: 'DOC-58143',
@@ -77,6 +80,7 @@ const dailyExpenseRows = [
     referenceNo: 'EXP-2026-0428-006',
     receiptDate: '04/27/2026',
     expenseType: 'Supplies',
+    costUnit: '',
     tinNo: '456-120-884-000',
     orSiNo: 'SI-77105',
     documentNo: 'DOC-58131',
@@ -95,6 +99,7 @@ const dailyExpenseFieldKeys = [
   'referenceNo',
   'receiptDate',
   'expenseType',
+  'costUnit',
   'tinNo',
   'orSiNo',
   'documentNo',
@@ -113,8 +118,8 @@ const emptyExpenseForm = {
   receiptDate: '',
   expenseType: '',
   expenseTypeId: '',
-  subsidiary: '',
-  subsidiaryId: '',
+  costUnit: '',
+  costUnitId: '',
   tinNo: '',
   orSiNo: '',
   documentNo: '',
@@ -360,12 +365,13 @@ function normalizeAccountTitle(row) {
   };
 }
 
-function normalizeSubsidiary(row) {
+function normalizeCostUnit(row) {
   const costUnitId = getUserField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
   const code = getUserField(row, ['code', 'Code']);
-  const description = getUserField(row, ['description', 'Description']);
+  const description = getUserField(row, ['description', 'Description', 'name', 'Name']);
+  const type = getUserField(row, ['type', 'Type']);
 
-  if (!code || !description) {
+  if (!costUnitId || !code || !description) {
     return null;
   }
 
@@ -373,6 +379,7 @@ function normalizeSubsidiary(row) {
     costUnitId,
     code,
     description,
+    type,
   };
 }
 
@@ -429,8 +436,8 @@ function createExpenseFormFromRecord(record) {
     receiptDate: record.receiptDateInput || '',
     expenseType: String(record.expenseType || ''),
     expenseTypeId: record.expenseTypeId || '',
-    subsidiary: record.subsidiary || '',
-    subsidiaryId: record.subsidiaryId || record.costUnitId || '',
+    costUnit: record.costUnit || record.subsidiary || '',
+    costUnitId: record.costUnitId || record.subsidiaryId || '',
     tinNo: record.tinNo || '',
     orSiNo: record.orSiNo || '',
     documentNo: record.documentNo || '',
@@ -500,19 +507,19 @@ export default function ExpenseEntryView({
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
   const [accountTitlesError, setAccountTitlesError] = useState('');
-  const [subsidiaryRows, setSubsidiaryRows] = useState([]);
-  const [isSubsidiariesLoading, setIsSubsidiariesLoading] = useState(false);
-  const [subsidiariesError, setSubsidiariesError] = useState('');
+  const [costUnitRows, setCostUnitRows] = useState([]);
+  const [isCostUnitsLoading, setIsCostUnitsLoading] = useState(false);
+  const [costUnitsError, setCostUnitsError] = useState('');
   const [employeeError, setEmployeeError] = useState('');
   const [expenseRows, setExpenseRows] = useState(dailyExpenseRows);
   const [formData, setFormData] = useState(() => createExpenseForm(null));
   const [errors, setErrors] = useState({});
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [isExpenseTypeLookupOpen, setIsExpenseTypeLookupOpen] = useState(false);
-  const [isSubsidiaryLookupOpen, setIsSubsidiaryLookupOpen] = useState(false);
+  const [isCostUnitLookupOpen, setIsCostUnitLookupOpen] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
-  const [subsidiaryQuery, setSubsidiaryQuery] = useState('');
+  const [costUnitQuery, setCostUnitQuery] = useState('');
   const [page, setPage] = useState(1);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
@@ -551,8 +558,8 @@ export default function ExpenseEntryView({
       .toLowerCase()
       .includes(query);
   });
-  const filteredSubsidiaryRows = subsidiaryRows.filter((row) => {
-    const query = subsidiaryQuery.trim().toLowerCase();
+  const filteredCostUnitRows = costUnitRows.filter((row) => {
+    const query = costUnitQuery.trim().toLowerCase();
 
     if (!query) {
       return true;
@@ -617,12 +624,12 @@ export default function ExpenseEntryView({
     const token = getToken();
     const controller = new AbortController();
 
-    const loadSubsidiaries = async () => {
-      setIsSubsidiariesLoading(true);
-      setSubsidiariesError('');
+    const loadCostUnits = async () => {
+      setIsCostUnitsLoading(true);
+      setCostUnitsError('');
 
       try {
-        const response = await fetch(buildApiUrl(SUBSIDIARY_ENDPOINT), {
+        const response = await fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           signal: controller.signal,
         });
@@ -630,23 +637,23 @@ export default function ExpenseEntryView({
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          throw new Error(data?.message || 'Unable to load subsidiaries.');
+          throw new Error(data?.message || 'Unable to load cost units.');
         }
 
-        setSubsidiaryRows(getApiCollection(data).map(normalizeSubsidiary).filter(Boolean));
+        setCostUnitRows(getApiCollection(data).map(normalizeCostUnit).filter(Boolean));
       } catch (error) {
         if (error.name !== 'AbortError') {
-          setSubsidiaryRows([]);
-          setSubsidiariesError(error.message || 'Unable to load subsidiaries.');
+          setCostUnitRows([]);
+          setCostUnitsError(error.message || 'Unable to load cost units.');
         }
       } finally {
         if (!controller.signal.aborted) {
-          setIsSubsidiariesLoading(false);
+          setIsCostUnitsLoading(false);
         }
       }
     };
 
-    loadSubsidiaries();
+    loadCostUnits();
 
     return () => controller.abort();
   }, []);
@@ -838,7 +845,7 @@ export default function ExpenseEntryView({
     if (!formData.date) nextErrors.date = 'Entry Date is required.';
     if (isFutureIsoDate(formData.date)) nextErrors.date = 'Entry Date cannot be later than today.';
     if (!formData.expenseType.trim() || !formData.expenseTypeId) nextErrors.expenseType = 'Select an expense type.';
-    if (!formData.subsidiary.trim() || !formData.subsidiaryId) nextErrors.subsidiary = 'Select a subsidiary.';
+    if (!formData.costUnit.trim() || !formData.costUnitId) nextErrors.costUnit = 'Select a cost unit.';
     if (!formData.amount || parseMoney(formData.amount) <= 0) nextErrors.amount = 'Enter a valid amount.';
     if (!formData.receiptDate) nextErrors.receiptDate = 'Receipt date is required.';
     if (isFutureIsoDate(formData.receiptDate)) nextErrors.receiptDate = 'Receipt Date cannot be later than today.';
@@ -886,8 +893,8 @@ export default function ExpenseEntryView({
           total,
           tin: formData.tinNo.trim(),
           vendorID: null,
+          costUnitID: Number(formData.costUnitId),
           expenseType: Number(formData.expenseTypeId),
-          costUnitID: Number(formData.subsidiaryId),
           attachment: formData.attachment || '',
         }),
       });
@@ -910,8 +917,8 @@ export default function ExpenseEntryView({
         referenceNo: responseReferenceNo,
         receiptDate: formatDateForTable(formData.receiptDate),
         expenseType: formData.expenseType,
-        subsidiary: formData.subsidiary,
-        subsidiaryId: formData.subsidiaryId,
+        costUnit: formData.costUnit,
+        costUnitId: formData.costUnitId,
         tinNo: formData.tinNo.trim(),
         orSiNo: formData.orSiNo.trim(),
         documentNo: formData.documentNo.trim(),
@@ -957,7 +964,7 @@ export default function ExpenseEntryView({
     tin: formData.tinNo.trim(),
     vendorID: null,
     expenseType: Number(formData.expenseTypeId),
-    costUnitID: Number(formData.subsidiaryId),
+    costUnitID: Number(formData.costUnitId),
     attachment: formData.attachment || '',
     status,
   });
@@ -1062,20 +1069,20 @@ export default function ExpenseEntryView({
     setIsExpenseTypeLookupOpen(false);
   };
 
-  const handleSelectSubsidiary = (row) => {
+  const handleSelectCostUnit = (row) => {
     if (!row.costUnitId) {
-      setErrors((current) => ({ ...current, subsidiary: 'Selected subsidiary has no CostUnitID.' }));
+      setErrors((current) => ({ ...current, costUnit: 'Selected cost unit has no CostUnitID.' }));
       return;
     }
 
     setFormData((current) => ({
       ...current,
-      subsidiary: `${row.code} - ${row.description}`,
-      subsidiaryId: row.costUnitId,
+      costUnit: `${row.code} - ${row.description}`,
+      costUnitId: row.costUnitId,
     }));
-    setErrors((current) => ({ ...current, subsidiary: '' }));
-    setSubsidiaryQuery('');
-    setIsSubsidiaryLookupOpen(false);
+    setErrors((current) => ({ ...current, costUnit: '' }));
+    setCostUnitQuery('');
+    setIsCostUnitLookupOpen(false);
   };
 
   const handleFileChange = async (event) => {
@@ -1313,43 +1320,44 @@ export default function ExpenseEntryView({
                   </div>
                 </FormField>
 
-                <FormField label="Subsidiary" name="subsidiary" value={formData.subsidiary} onChange={updateForm} error={errors.subsidiary}>
+                <FormField label="Cost Unit" name="costUnit" value={formData.costUnit} onChange={updateForm} error={errors.costUnit} required>
                   <div className="etr-expense-combo">
                     <button
                       type="button"
-                      className={`etr-expense-lookup-button ${formData.subsidiary ? 'has-value' : ''}`}
+                      className={`etr-expense-lookup-button ${formData.costUnit ? 'has-value' : ''}`}
                       onClick={() => {
                         if (!isReadOnlyDetail) {
-                          setIsSubsidiaryLookupOpen((current) => !current);
+                          setIsCostUnitLookupOpen((current) => !current);
                         }
                       }}
-                      aria-expanded={isSubsidiaryLookupOpen}
+                      aria-expanded={isCostUnitLookupOpen}
+                      aria-invalid={!!errors.costUnit}
                       disabled={isReadOnlyDetail}
                     >
-                      <span>{formData.subsidiary || 'Select subsidiary'}</span>
-                      <ExpenseChevronIcon isOpen={isSubsidiaryLookupOpen} />
+                      <span>{formData.costUnit || 'Select cost unit'}</span>
+                      <ExpenseChevronIcon isOpen={isCostUnitLookupOpen} />
                     </button>
 
-                    {isSubsidiaryLookupOpen ? (
+                    {isCostUnitLookupOpen ? (
                       <div className="etr-expense-combo-panel">
                         <input
-                          value={subsidiaryQuery}
-                          onChange={(event) => setSubsidiaryQuery(event.target.value)}
-                          placeholder="Search subsidiary code or subsidiary description"
+                          value={costUnitQuery}
+                          onChange={(event) => setCostUnitQuery(event.target.value)}
+                          placeholder="Search code or description"
                           autoFocus
                         />
                         <div className="etr-expense-combo-list">
-                          {isSubsidiariesLoading ? (
-                            <div className="etr-expense-combo-status">Loading subsidiaries...</div>
+                          {isCostUnitsLoading ? (
+                            <div className="etr-expense-combo-status">Loading cost units...</div>
                           ) : null}
-                          {!isSubsidiariesLoading && subsidiariesError ? (
-                            <div className="etr-expense-combo-status is-error">{subsidiariesError}</div>
+                          {!isCostUnitsLoading && costUnitsError ? (
+                            <div className="etr-expense-combo-status is-error">{costUnitsError}</div>
                           ) : null}
-                          {!isSubsidiariesLoading && !subsidiariesError && filteredSubsidiaryRows.length === 0 ? (
-                            <div className="etr-expense-combo-status">No subsidiaries found.</div>
+                          {!isCostUnitsLoading && !costUnitsError && filteredCostUnitRows.length === 0 ? (
+                            <div className="etr-expense-combo-status">No cost units found.</div>
                           ) : null}
-                          {!isSubsidiariesLoading && !subsidiariesError ? filteredSubsidiaryRows.map((row) => (
-                            <button type="button" key={row.costUnitId || `${row.code}-${row.description}`} onClick={() => handleSelectSubsidiary(row)}>
+                          {!isCostUnitsLoading && !costUnitsError ? filteredCostUnitRows.map((row) => (
+                            <button type="button" key={row.costUnitId} onClick={() => handleSelectCostUnit(row)}>
                               <span>{row.code}</span>
                               <strong>{row.description}</strong>
                             </button>

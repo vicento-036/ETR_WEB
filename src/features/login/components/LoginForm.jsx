@@ -6,12 +6,26 @@ import {
 } from '../../../services/authStorage';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const profileOptions = ['ETRIS-DEMO', 'ETRIS-MDLI-DIST'];
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
 }
 
+function buildSessionData(data, selectedProfile, username) {
+  const user = {
+    ...(data.user ?? { username }),
+    profile: data.user?.profile ?? selectedProfile,
+  };
+
+  return {
+    ...data,
+    user,
+  };
+}
+
 function LoginForm({ onLoginSuccess }) {
+  const [selectedProfile, setSelectedProfile] = useState(profileOptions[0]);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -52,6 +66,7 @@ function LoginForm({ onLoginSuccess }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          profile: selectedProfile,
           username,
           password,
         }),
@@ -70,8 +85,10 @@ function LoginForm({ onLoginSuccess }) {
         return;
       }
 
-      saveAuth(data);
-      onLoginSuccess?.(data.user ?? { username });
+      const sessionData = buildSessionData(data, selectedProfile, username);
+
+      saveAuth(sessionData);
+      onLoginSuccess?.(sessionData.user);
     } catch (error) {
       setMessage('Hindi ma-reach ang WebAPI. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang ASP.NET WebAPI sa http://localhost:5074.');
     } finally {
@@ -81,7 +98,10 @@ function LoginForm({ onLoginSuccess }) {
 
   const handlePreviewDashboard = () => {
     setMessage('');
-    onLoginSuccess?.({ username: username || 'Executive Service Account' });
+    onLoginSuccess?.({
+      username: username || 'Executive Service Account',
+      profile: selectedProfile,
+    });
   };
 
   return (
@@ -89,7 +109,22 @@ function LoginForm({ onLoginSuccess }) {
       <h2>SIGN IN</h2>
 
       <label className="etr-input-box">
-        <span className="etr-input-label">username</span>
+        <span className="etr-input-label">Selected Profile</span>
+        <select
+          className="etr-form-input etr-profile-select"
+          value={selectedProfile}
+          onChange={(event) => setSelectedProfile(event.target.value)}
+        >
+          {profileOptions.map((profile) => (
+            <option key={profile} value={profile}>
+              {profile}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="etr-input-box">
+        <span className="etr-input-label">Username</span>
         <input
           className="etr-form-input"
           type="text"

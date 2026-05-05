@@ -197,6 +197,10 @@ function getUserDisplayName(user) {
   return user.username || 'Executive Service Account';
 }
 
+function getUserProfile(user) {
+  return user?.profile || user?.Profile || 'ETRIS-DEMO';
+}
+
 function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onOpenExpense, onBackToManager }) {
   if (activeItemId === 'daily-expense-manager') {
     return (
@@ -287,6 +291,7 @@ function DashboardPage({ user, onLogout }) {
   const searchBlurTimeoutRef = useRef(null);
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
+  const activeProfile = getUserProfile(user);
   const searchIndex = useMemo(() => buildSearchIndex(sidebarSections), []);
   const trimmedSearchQuery = searchQuery.trim().toLowerCase();
   const searchResults = useMemo(() => {
@@ -474,6 +479,7 @@ function DashboardPage({ user, onLogout }) {
           <div className="etr-dashboard-avatar">{userInitials}</div>
           <div className="etr-dashboard-account">
             <strong>{displayName}</strong>
+            <span>{activeProfile}</span>
           </div>
           <button type="button" className="etr-dashboard-logout" onClick={onLogout}>
             Logout
