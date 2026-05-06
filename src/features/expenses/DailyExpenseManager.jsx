@@ -124,6 +124,12 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
   const expenseDate = getField(row, ['expenseDate', 'ExpenseDate', 'date', 'Date']);
   const receiptDate = getField(row, ['receiptDate', 'ReceiptDate']);
   const subsidiaryId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'subsidiaryId', 'SubsidiaryId']);
+  const expenseId = getField(row, ['expenseID', 'expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']);
+  const attachmentValue = getField(row, ['attachment', 'Attachment']);
+  const attachmentName = String(attachmentValue || '')
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .pop() || '';
 
   const expenseTypeDisplay =
     getField(row, ['expenseTypeDisplay', 'ExpenseTypeDisplay'])
@@ -142,7 +148,7 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
     || getField(row, ['subsidiary', 'Subsidiary', 'costUnit', 'CostUnit']);
 
   return {
-    expenseId: getField(row, ['expenseID', 'expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']),
+    expenseId,
     status: getField(row, ['status', 'Status']) || 'Pending',
     employeeCode: getField(row, ['employeeCode', 'EmployeeCode', 'employeeNo', 'EmployeeNo']),
     employeeName: getField(row, ['employeeName', 'EmployeeName', 'name', 'Name']),
@@ -165,8 +171,8 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
     vatValue: getField(row, ['vat', 'Vat', 'VAT']),
     total: formatMoney(getField(row, ['total', 'Total'])),
     totalValue: getField(row, ['total', 'Total']),
-    attachment: getField(row, ['attachment', 'Attachment']),
-    attachmentUrl: getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']),
+    attachment: attachmentName || attachmentValue,
+    attachmentUrl: expenseId ? `${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment` : getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']),
   };
 }
 

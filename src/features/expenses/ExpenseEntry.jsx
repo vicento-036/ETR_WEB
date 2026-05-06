@@ -213,6 +213,28 @@ function getAttachmentUrl(attachment, attachmentUrl = '') {
   return buildApiUrl(`/uploads/${encodeURIComponent(source)}`);
 }
 
+function getAttachmentDisplayName(value) {
+  const source = String(value || '').trim();
+
+  if (!source) {
+    return '';
+  }
+
+  try {
+    if (/^https?:/i.test(source)) {
+      const url = new URL(source);
+      const segments = url.pathname.split('/').filter(Boolean);
+      return decodeURIComponent(segments[segments.length - 1] || source);
+    }
+  } catch {
+    return source;
+  }
+
+  const normalized = source.replace(/\\/g, '/');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] || source;
+}
+
 function createExistingAttachmentPreview(record) {
   const attachment = record?.attachment || '';
   const attachmentUrl = record?.attachmentUrl || '';
@@ -223,7 +245,7 @@ function createExistingAttachmentPreview(record) {
   }
 
   return {
-    name: attachment,
+    name: getAttachmentDisplayName(attachment),
     size: 'Uploaded file',
     type: isImageAttachmentName(attachment) ? 'Image' : 'Document',
     url,
@@ -521,6 +543,7 @@ export default function ExpenseEntryView({
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
   const [costUnitQuery, setCostUnitQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedAttachmentFile, setSelectedAttachmentFile] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -581,6 +604,29 @@ export default function ExpenseEntryView({
   useEffect(() => () => {
     revokeAttachmentObjectUrl();
   }, []);
+
+  const uploadAttachmentFile = async (expenseId, file, token) => {
+    if (!expenseId || !file) {
+      return null;
+    }
+
+    const uploadData = new FormData();
+    uploadData.append('attachment', file);
+
+    const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment`), {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: uploadData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Daily expense was saved, but attachment upload failed.');
+    }
+
+    return data;
+  };
 
   useEffect(() => {
     const token = getToken();
@@ -700,6 +746,7 @@ export default function ExpenseEntryView({
   useEffect(() => {
     if (selectedExpense) {
       revokeAttachmentObjectUrl();
+      setSelectedAttachmentFile(null);
       setFormData(createExpenseFormFromRecord(selectedExpense));
       setErrors({});
       setSaveError('');
@@ -871,6 +918,10 @@ export default function ExpenseEntryView({
     }
 
     const token = getToken();
+    const pendingAttachmentFile = selectedAttachmentFile;
+    const currentFormData = { ...formData };
+    const currentTotal = total;
+
     setIsSaving(true);
     setSaveMessage('');
     setSaveError('');
@@ -883,19 +934,19 @@ export default function ExpenseEntryView({
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          expenseDate: formData.date,
-          receiptDate: formData.receiptDate || null,
-          orSINo: formData.orSiNo.trim(),
-          documentNo: formData.documentNo.trim(),
-          description: formData.description.trim(),
-          amount: parseMoney(formData.amount),
-          vat: parseMoney(formData.vat),
-          total,
-          tin: formData.tinNo.trim(),
+          expenseDate: currentFormData.date,
+          receiptDate: currentFormData.receiptDate || null,
+          orSINo: currentFormData.orSiNo.trim(),
+          documentNo: currentFormData.documentNo.trim(),
+          description: currentFormData.description.trim(),
+          amount: parseMoney(currentFormData.amount),
+          vat: parseMoney(currentFormData.vat),
+          total: currentTotal,
+          tin: currentFormData.tinNo.trim(),
           vendorID: null,
-          costUnitID: Number(formData.costUnitId),
-          expenseType: Number(formData.expenseTypeId),
-          attachment: formData.attachment || '',
+          costUnitID: Number(currentFormData.costUnitId),
+          expenseType: Number(currentFormData.expenseTypeId),
+          attachment: pendingAttachmentFile ? '' : currentFormData.attachment || '',
         }),
       });
 
@@ -905,37 +956,38 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
-      const responseEmployeeNo = data.employeeNo || formData.employeeNo.trim();
-      const responseEmployeeName = data.employeeName || formData.employeeName.trim();
-      const responseReferenceNo = data.referenceNo || formData.referenceNo.trim() || 'Generated';
+      const responseEmployeeNo = data.employeeNo || currentFormData.employeeNo.trim();
+      const responseEmployeeName = data.employeeName || currentFormData.employeeName.trim();
+      const responseReferenceNo = data.referenceNo || currentFormData.referenceNo.trim() || 'Generated';
 
       const nextRow = {
         expenseId: data.expenseId,
         employeeNo: responseEmployeeNo,
         employeeName: responseEmployeeName,
-        date: formatDateForTable(formData.date),
+        date: formatDateForTable(currentFormData.date),
         referenceNo: responseReferenceNo,
-        receiptDate: formatDateForTable(formData.receiptDate),
-        expenseType: formData.expenseType,
-        costUnit: formData.costUnit,
-        costUnitId: formData.costUnitId,
-        tinNo: formData.tinNo.trim(),
-        orSiNo: formData.orSiNo.trim(),
-        documentNo: formData.documentNo.trim(),
-        description: formData.description.trim(),
-        amount: formatMoney(parseMoney(formData.amount)),
-        vat: formatMoney(parseMoney(formData.vat)),
-        total: formatTotal(total),
-        attachment: formData.attachment || 'No attachment',
+        receiptDate: formatDateForTable(currentFormData.receiptDate),
+        expenseType: currentFormData.expenseType,
+        costUnit: currentFormData.costUnit,
+        costUnitId: currentFormData.costUnitId,
+        tinNo: currentFormData.tinNo.trim(),
+        orSiNo: currentFormData.orSiNo.trim(),
+        documentNo: currentFormData.documentNo.trim(),
+        description: currentFormData.description.trim(),
+        amount: formatMoney(parseMoney(currentFormData.amount)),
+        vat: formatMoney(parseMoney(currentFormData.vat)),
+        total: formatTotal(currentTotal),
+        attachment: currentFormData.attachment || 'No attachment',
+        attachmentUrl: '',
       };
 
-      const nextRows = [nextRow, ...expenseRows];
-      setExpenseRows(nextRows);
+      setExpenseRows((current) => [nextRow, ...current]);
       setPage(1);
       setFormData({
         ...createExpenseForm(employeeInfo),
         referenceNo: responseReferenceNo === 'Generated' ? '' : responseReferenceNo,
       });
+      setSelectedAttachmentFile(null);
       setErrors({});
       setIsAttachmentViewerOpen(false);
       revokeAttachmentObjectUrl();
@@ -944,6 +996,27 @@ export default function ExpenseEntryView({
         attachmentInputRef.current.value = '';
       }
       setSaveMessage(data.message || 'Daily expense saved successfully.');
+
+      if (pendingAttachmentFile) {
+        uploadAttachmentFile(data.expenseId, pendingAttachmentFile, token)
+          .then((attachmentData) => {
+            const savedAttachmentUrl = attachmentData?.attachmentUrl || attachmentData?.attachment || '';
+            const authenticatedUrl = attachmentData?.authenticatedUrl || '';
+
+            setExpenseRows((current) => current.map((row) => (
+              row.expenseId === data.expenseId
+                ? {
+                    ...row,
+                    attachment: savedAttachmentUrl || row.attachment,
+                    attachmentUrl: authenticatedUrl || row.attachmentUrl,
+                  }
+                : row
+            )));
+          })
+          .catch((error) => {
+            setSaveError(error.message || 'Daily expense was saved, but attachment upload failed.');
+          });
+      }
     } catch (error) {
       setSaveError(error.message || 'Unable to save daily expense.');
     } finally {
@@ -965,7 +1038,7 @@ export default function ExpenseEntryView({
     vendorID: null,
     expenseType: Number(formData.expenseTypeId),
     costUnitID: Number(formData.costUnitId),
-    attachment: formData.attachment || '',
+    attachment: selectedAttachmentFile ? '' : formData.attachment || '',
     status,
   });
 
@@ -995,8 +1068,18 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
+      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
+      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+        setFormData((current) => ({
+          ...current,
+          attachment: attachmentData.attachmentUrl || current.attachment,
+          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+        }));
+      }
+
       setIsEditingDetail(false);
-      setSaveMessage(data.message || 'Daily expense updated successfully.');
+      setSelectedAttachmentFile(null);
+      setSaveMessage(attachmentData?.message || data.message || 'Daily expense updated successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to update daily expense.');
     } finally {
@@ -1030,9 +1113,19 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
+      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
+      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+        setFormData((current) => ({
+          ...current,
+          attachment: attachmentData.attachmentUrl || current.attachment,
+          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+        }));
+      }
+
       setIsEditingDetail(false);
       setDetailStatus('Approved');
-      setSaveMessage(data.message || 'Daily expense approved successfully.');
+      setSelectedAttachmentFile(null);
+      setSaveMessage(attachmentData?.message || data.message || 'Daily expense approved successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to approve daily expense.');
     } finally {
@@ -1042,6 +1135,7 @@ export default function ExpenseEntryView({
 
   const handleClear = () => {
     setFormData(createExpenseForm(employeeInfo));
+    setSelectedAttachmentFile(null);
     setErrors({});
     setSaveError('');
     setSaveMessage('');
@@ -1132,6 +1226,7 @@ export default function ExpenseEntryView({
     }
 
     setFormData((current) => ({ ...current, attachment: file.name, attachmentUrl: '' }));
+    setSelectedAttachmentFile(file);
     setErrors((current) => ({ ...current, attachment: '' }));
     setAttachmentPreview({
       name: file.name,
@@ -1165,6 +1260,7 @@ export default function ExpenseEntryView({
     revokeAttachmentObjectUrl();
 
     setFormData((current) => ({ ...current, attachment: '', attachmentUrl: '' }));
+    setSelectedAttachmentFile(null);
     setIsAttachmentViewerOpen(false);
     setAttachmentPreview(null);
     setErrors((current) => ({ ...current, attachment: '' }));
