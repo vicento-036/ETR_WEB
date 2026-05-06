@@ -15,6 +15,7 @@ const MAX_ATTACHMENT_LABEL = '5 MB';
 const MAX_DOCUMENT_REFERENCE_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 255;
 const MAX_TIN_DIGITS = 14;
+const MONEY_INPUT_WARNING = 'input numbers only.';
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -136,6 +137,20 @@ function parseMoney(value) {
   return Number(String(value || '').replace(/,/g, '')) || 0;
 }
 
+function sanitizeMoneyInput(value) {
+  const rawValue = String(value || '');
+  const digitsAndDecimal = rawValue.replace(/[^0-9.]/g, '');
+  const firstDecimalIndex = digitsAndDecimal.indexOf('.');
+  const cleanedValue = firstDecimalIndex === -1
+    ? digitsAndDecimal
+    : `${digitsAndDecimal.slice(0, firstDecimalIndex + 1)}${digitsAndDecimal.slice(firstDecimalIndex + 1).replace(/\./g, '')}`;
+
+  return {
+    value: cleanedValue,
+    hasInvalidCharacters: cleanedValue !== rawValue,
+  };
+}
+
 function formatMoney(value) {
   return value.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -235,21 +250,29 @@ function getAttachmentDisplayName(value) {
   return segments[segments.length - 1] || source;
 }
 
+function getAttachmentNameFromHeader(value) {
+  const match = String(value || '').match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
+
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 function createExistingAttachmentPreview(record) {
   const attachment = record?.attachment || '';
   const attachmentUrl = record?.attachmentUrl || '';
   const url = getAttachmentUrl(attachment, attachmentUrl);
 
-  if (!attachment || !url) {
+  if (!url) {
     return null;
   }
 
+  const name = getAttachmentDisplayName(attachment) || getAttachmentDisplayName(attachmentUrl) || 'Uploaded attachment';
+
   return {
-    name: getAttachmentDisplayName(attachment),
+    name,
     size: 'Uploaded file',
-    type: isImageAttachmentName(attachment) ? 'Image' : 'Document',
+    type: isImageAttachmentName(name) ? 'Image' : 'Document',
     url,
-    isImage: isImageAttachmentName(attachment),
+    isImage: isImageAttachmentName(name),
     isObjectUrl: false,
   };
 }
@@ -283,12 +306,6 @@ function getTodayIsoDate() {
 
 function isFutureIsoDate(value) {
   return Boolean(value) && value > getTodayIsoDate();
-}
-
-function blockSignedExponentKeys(event) {
-  if (['e', 'E', '+', '-'].includes(event.key)) {
-    event.preventDefault();
-  }
 }
 
 function getUserField(user, fieldNames) {
@@ -628,6 +645,42 @@ export default function ExpenseEntryView({
     return data;
   };
 
+  const loadExistingAttachmentPreview = async (record, signal) => {
+    const preview = createExistingAttachmentPreview(record);
+
+    if (!preview?.url || /^(blob:|data:)/i.test(preview.url)) {
+      return preview;
+    }
+
+    const token = getToken();
+    const response = await fetch(preview.url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error('Unable to load attachment preview.');
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    attachmentObjectUrlRef.current = objectUrl;
+
+    const headerName = getAttachmentNameFromHeader(response.headers.get('content-disposition'));
+    const name = headerName || preview.name;
+    const isImage = blob.type.startsWith('image/') || isImageAttachmentName(name);
+
+    return {
+      ...preview,
+      name,
+      size: formatAttachmentSize(blob.size),
+      type: blob.type || preview.type,
+      url: objectUrl,
+      isImage,
+      isObjectUrl: true,
+    };
+  };
+
   useEffect(() => {
     const token = getToken();
     const controller = new AbortController();
@@ -745,6 +798,9 @@ export default function ExpenseEntryView({
 
   useEffect(() => {
     if (selectedExpense) {
+      const controller = new AbortController();
+      const existingPreview = createExistingAttachmentPreview(selectedExpense);
+
       revokeAttachmentObjectUrl();
       setSelectedAttachmentFile(null);
       setFormData(createExpenseFormFromRecord(selectedExpense));
@@ -754,10 +810,24 @@ export default function ExpenseEntryView({
       setIsEditingDetail(false);
       setDetailStatus(selectedExpense.status || 'Pending');
       setIsAttachmentViewerOpen(false);
-      setAttachmentPreview(createExistingAttachmentPreview(selectedExpense));
+      setAttachmentPreview(existingPreview);
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
       }
+
+      loadExistingAttachmentPreview(selectedExpense, controller.signal)
+        .then((preview) => {
+          if (!controller.signal.aborted) {
+            setAttachmentPreview(preview);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setAttachmentPreview(existingPreview);
+          }
+        });
+
+      return () => controller.abort();
     }
   }, [selectedExpense]);
 
@@ -844,7 +914,9 @@ export default function ExpenseEntryView({
             : '',
       }));
     } else if (name === 'amount' || name === 'vat') {
-      const cleanedValue = value.replace(/[eE+-]/g, '');
+      const moneyInput = sanitizeMoneyInput(value);
+      const cleanedValue = moneyInput.value;
+      const inputWarning = moneyInput.hasInvalidCharacters ? MONEY_INPUT_WARNING : '';
 
       if (name === 'vat') {
         const amount = parseMoney(formData.amount);
@@ -853,7 +925,7 @@ export default function ExpenseEntryView({
         setFormData((current) => ({ ...current, vat: cleanedValue }));
         setErrors((current) => ({
           ...current,
-          vat: amount > 0 && vat > amount ? 'VAT cannot be higher than Amount.' : '',
+          vat: inputWarning || (amount > 0 && vat > amount ? 'VAT cannot be higher than Amount.' : ''),
         }));
       } else {
         const amount = parseMoney(cleanedValue);
@@ -862,7 +934,7 @@ export default function ExpenseEntryView({
         setFormData((current) => ({ ...current, [name]: cleanedValue }));
         setErrors((current) => ({
           ...current,
-          amount: '',
+          amount: inputWarning,
           vat: cleanedValue && vat > amount ? 'VAT cannot be higher than Amount.' : '',
         }));
       }
@@ -906,6 +978,8 @@ export default function ExpenseEntryView({
     
     const amount = parseMoney(formData.amount);
     const vat = parseMoney(formData.vat);
+    if (sanitizeMoneyInput(formData.amount).hasInvalidCharacters) nextErrors.amount = MONEY_INPUT_WARNING;
+    if (sanitizeMoneyInput(formData.vat).hasInvalidCharacters) nextErrors.vat = MONEY_INPUT_WARNING;
     if (vat > amount) nextErrors.vat = 'VAT cannot be higher than Amount.';
 
     setErrors(nextErrors);
@@ -1487,7 +1561,6 @@ export default function ExpenseEntryView({
                 inputMode="decimal"
                 value={formData.amount}
                 onChange={updateForm}
-                onKeyDown={blockSignedExponentKeys}
                 error={errors.amount}
                 readOnly={isReadOnlyDetail}
                 required
@@ -1499,7 +1572,6 @@ export default function ExpenseEntryView({
                 inputMode="decimal"
                 value={formData.vat}
                 onChange={updateForm}
-                onKeyDown={blockSignedExponentKeys}
                 error={errors.vat}
                 readOnly={isReadOnlyDetail}
               />
