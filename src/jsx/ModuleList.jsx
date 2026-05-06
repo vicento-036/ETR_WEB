@@ -1,5 +1,5 @@
 import React from 'react';
-import { modules } from '../data/modules.jsx';
+import { modules } from './modules.jsx';
 
 function ModuleList() {
   return (

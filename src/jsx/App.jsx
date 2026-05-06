@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import appLogo from './assets/branding/etr-logo.png';
-import { clearAuth, getToken, getUser, isTokenExpired } from './services/authStorage';
+import LoginPage from './Login.jsx';
+import DashboardPage from './Dashboard.jsx';
+import appLogo from '../assets/branding/etr-logo.png';
+import { clearAuth, getToken, getUser, isTokenExpired } from '../services/authStorage';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 

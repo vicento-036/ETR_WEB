@@ -1,6 +1,6 @@
 import React from 'react';
-import etrLogo from '../../../assets/branding/etr-logo.png';
-import LoginForm from './LoginForm';
+import etrLogo from '../assets/branding/etr-logo.png';
+import LoginForm from './LoginForm.jsx';
 
 function LoginLayout({ onLoginSuccess }) {
   return (

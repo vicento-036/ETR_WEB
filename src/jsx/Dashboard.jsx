@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import DailyExpenseManager from '../features/expenses/DailyExpenseManager';
-import ExpenseEntryView from '../features/expenses/ExpenseEntry';
+import DailyExpenseManager from './Dailyexpensemanager.jsx';
+import ExpenseEntryView from './Dailyexpense.jsx';
 
 const sidebarSections = [
   {

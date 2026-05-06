@@ -3,7 +3,7 @@ import {
   clearAuth,
   isTokenExpired,
   saveAuth,
-} from '../../../services/authStorage';
+} from '../services/authStorage';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const profileOptions = ['ETRIS-DEMO', 'ETRIS-MDLI-DIST'];
