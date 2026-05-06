@@ -136,6 +136,15 @@ function parseMoney(value) {
   return Number(String(value || '').replace(/,/g, '')) || 0;
 }
 
+function sanitizeMoneyInput(value) {
+  const cleanedValue = String(value || '').replace(/[^0-9.]/g, '');
+  const [wholePart, ...decimalParts] = cleanedValue.split('.');
+
+  return decimalParts.length > 0
+    ? `${wholePart}.${decimalParts.join('')}`
+    : wholePart;
+}
+
 function formatMoney(value) {
   return value.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -263,8 +272,40 @@ function isFutureIsoDate(value) {
   return Boolean(value) && value > getTodayIsoDate();
 }
 
-function blockSignedExponentKeys(event) {
-  if (['e', 'E', '+', '-'].includes(event.key)) {
+function blockNonMoneyKeys(event) {
+  const allowedControlKeys = [
+    'Backspace',
+    'Delete',
+    'Tab',
+    'Enter',
+    'Escape',
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'ArrowDown',
+    'Home',
+    'End',
+  ];
+
+  if (
+    allowedControlKeys.includes(event.key)
+    || event.ctrlKey
+    || event.metaKey
+    || /^\d$/.test(event.key)
+  ) {
+    return;
+  }
+
+  if (event.key === '.') {
+    const { selectionStart, selectionEnd, value } = event.currentTarget;
+    const selectedText = value.slice(selectionStart ?? 0, selectionEnd ?? 0);
+
+    if (!value.includes('.') || selectedText.includes('.')) {
+      return;
+    }
+  }
+
+  if (event.key !== 'Shift') {
     event.preventDefault();
   }
 }
@@ -797,7 +838,7 @@ export default function ExpenseEntryView({
             : '',
       }));
     } else if (name === 'amount' || name === 'vat') {
-      const cleanedValue = value.replace(/[eE+-]/g, '');
+      const cleanedValue = sanitizeMoneyInput(value);
 
       if (name === 'vat') {
         const amount = parseMoney(formData.amount);
@@ -1391,7 +1432,7 @@ export default function ExpenseEntryView({
                 inputMode="decimal"
                 value={formData.amount}
                 onChange={updateForm}
-                onKeyDown={blockSignedExponentKeys}
+                onKeyDown={blockNonMoneyKeys}
                 error={errors.amount}
                 readOnly={isReadOnlyDetail}
                 required
@@ -1403,7 +1444,7 @@ export default function ExpenseEntryView({
                 inputMode="decimal"
                 value={formData.vat}
                 onChange={updateForm}
-                onKeyDown={blockSignedExponentKeys}
+                onKeyDown={blockNonMoneyKeys}
                 error={errors.vat}
                 readOnly={isReadOnlyDetail}
               />
