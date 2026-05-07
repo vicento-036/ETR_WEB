@@ -1,0 +1,358 @@
+/* Daily Expense Manager Styles */
+
+.etr-expense-entry {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.etr-expense-toolbar {
+  border: 1px solid var(--etr-dashboard-line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 45px rgba(23, 60, 100, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 20px;
+}
+
+.etr-expense-kicker {
+  margin: 0 0 6px;
+  color: #1b5a96;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.etr-expense-toolbar h1 {
+  margin: 0;
+  color: #12314e;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.etr-expense-toolbar span {
+  display: block;
+  margin-top: 6px;
+  color: var(--etr-dashboard-ink-soft);
+  font-size: 0.9rem;
+}
+
+.etr-expense-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.etr-expense-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(18, 62, 109, 0.16);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #21486d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.etr-expense-actions .etr-expense-save-button {
+  border-color: #165ea4;
+  background: linear-gradient(180deg, #0f4f8e 0%, #0c4278 100%);
+  color: #ffffff;
+}
+
+.etr-expense-save-message {
+  border: 1px solid rgba(39, 132, 78, 0.24);
+  border-radius: 8px;
+  background: #eefaf3;
+  color: #1d6b3d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 10px 12px;
+}
+
+.etr-expense-save-message.is-error {
+  border-color: rgba(180, 45, 45, 0.2);
+  background: #fff8f8;
+  color: #8d2c2c;
+}
+
+.etr-expense-table-panel {
+  min-width: 0;
+  overflow: hidden;
+  grid-column: 1 / -1;
+  border: 1px solid rgba(20, 62, 109, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.93);
+  box-shadow: 0 18px 45px rgba(23, 60, 100, 0.08);
+  padding: 12px 14px;
+}
+
+.etr-expense-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.etr-expense-table-head h2 {
+  margin: 0;
+  color: #12314e;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.etr-expense-table-head > span {
+  color: #6b8197;
+  font-size: 0.76rem;
+}
+
+.etr-expense-manager-search {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 360px);
+}
+
+.etr-expense-manager-search span {
+  color: #415f7b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.etr-expense-manager-search input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(27, 90, 150, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173652;
+  font: inherit;
+  font-size: 0.86rem;
+  outline: none;
+  padding: 0 10px;
+}
+
+.etr-expense-manager-search input:focus {
+  border-color: #1b5a96;
+  box-shadow: 0 0 0 3px rgba(27, 90, 150, 0.13);
+}
+
+.etr-expense-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid rgba(20, 62, 109, 0.15);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(23, 60, 100, 0.08);
+}
+
+.etr-expense-table {
+  width: 100%;
+  min-width: 1580px;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #213f5b;
+  font-size: 0.86rem;
+}
+
+.etr-expense-manager-table {
+  min-width: 1740px;
+}
+
+.etr-expense-table th,
+.etr-expense-table td {
+  padding: 12px 14px;
+  border-right: 1px solid rgba(20, 62, 109, 0.1);
+  border-bottom: 1px solid rgba(20, 62, 109, 0.1);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.etr-expense-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef6fd;
+  color: #143452;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.etr-expense-sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.etr-expense-sort-button:focus {
+  outline: 2px solid rgba(27, 90, 150, 0.35);
+  outline-offset: 3px;
+}
+
+.etr-expense-sort-button span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etr-expense-sort-indicator {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  width: 8px;
+}
+
+.etr-expense-sort-indicator::before,
+.etr-expense-sort-indicator::after {
+  content: "";
+  justify-self: center;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+  opacity: 0.35;
+}
+
+.etr-expense-sort-indicator::before {
+  border-bottom: 5px solid currentColor;
+}
+
+.etr-expense-sort-indicator::after {
+  border-top: 5px solid currentColor;
+}
+
+.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-asc::before,
+.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-desc::after {
+  opacity: 1;
+}
+
+.etr-expense-table tbody tr:hover {
+  background: #f7fbff;
+}
+
+.etr-expense-clickable-row {
+  cursor: pointer;
+}
+
+.etr-expense-table td.is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.etr-expense-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #eef6fd;
+  color: #174b7f;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0 9px;
+}
+
+.etr-expense-status.approved {
+  background: #eefaf3;
+  color: #1d6b3d;
+}
+
+.etr-expense-status.pending {
+  background: #fff8eb;
+  color: #76521d;
+}
+
+.etr-expense-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  color: #587390;
+  font-size: 0.86rem;
+}
+
+.etr-expense-pagination button {
+  min-height: 32px;
+  border: 1px solid rgba(27, 90, 150, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #174b7f;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 14px;
+}
+
+.etr-expense-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.etr-expense-page-numbers button {
+  min-width: 34px;
+  padding: 0 10px;
+}
+
+.etr-expense-page-numbers button.is-active {
+  border-color: #1b5a96;
+  background: #1b5a96;
+  color: #ffffff;
+}
+
+.etr-expense-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 900px) {
+  .etr-expense-toolbar,
+  .etr-expense-table-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .etr-expense-actions {
+    justify-content: flex-start;
+  }
+
+  .etr-expense-manager-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .etr-expense-toolbar,
+  .etr-expense-table-panel {
+    padding: 14px;
+  }
+
+  .etr-expense-actions button {
+    flex: 1 1 110px;
+  }
+
+  .etr-expense-table {
+    min-width: 1320px;
+  }
+}

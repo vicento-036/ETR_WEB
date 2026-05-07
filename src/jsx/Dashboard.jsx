@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import DailyExpenseManager from '../features/expenses/DailyExpenseManager';
-import ExpenseEntryView from '../features/expenses/ExpenseEntry';
+import { useNavigate, useParams } from 'react-router-dom';
+import DailyExpenseManager from './Dailyexpensemanager.jsx';
+import ExpenseEntryView from './Dailyexpense.jsx';
 
 const sidebarSections = [
   {
@@ -277,8 +278,9 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 }
 
 function DashboardPage({ user, onLogout }) {
+  const navigate = useNavigate();
+  const { moduleId = '' } = useParams();
   const [sidebarWidth, setSidebarWidth] = useState(398);
-  const [activeItemId, setActiveItemId] = useState('');
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -289,6 +291,7 @@ function DashboardPage({ user, onLogout }) {
     startWidth: 398,
   });
   const searchBlurTimeoutRef = useRef(null);
+  const activeItemId = moduleId;
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
   const activeProfile = getUserProfile(user);
@@ -316,6 +319,36 @@ function DashboardPage({ user, onLogout }) {
       [sectionId]: !current[sectionId],
     }));
   };
+
+  const navigateToModule = (itemId) => {
+    if (itemId !== 'expense-entry') {
+      setSelectedExpense(null);
+    }
+
+    navigate(itemId ? `/dashboard/${itemId}` : '/dashboard');
+  };
+
+  useEffect(() => {
+    if (!activeItemId) {
+      return;
+    }
+
+    const activeEntry = searchIndex.find((entry) => entry.id === activeItemId);
+
+    if (!activeEntry) {
+      return;
+    }
+
+    setOpenSections((current) => {
+      const nextOpenSections = { ...current, [activeEntry.sectionId]: true };
+
+      activeEntry.parentIds.forEach((parentId) => {
+        nextOpenSections[parentId] = true;
+      });
+
+      return nextOpenSections;
+    });
+  }, [activeItemId, searchIndex]);
 
   useEffect(() => {
     const handlePointerMove = (event) => {
@@ -384,7 +417,7 @@ function DashboardPage({ user, onLogout }) {
     });
 
     if (entry.isSelectable) {
-      setActiveItemId(entry.id);
+      navigateToModule(entry.id);
     }
 
     if (sidebarWidth <= 0) {
@@ -515,7 +548,7 @@ function DashboardPage({ user, onLogout }) {
                         openItems={openSections}
                         activeItemId={activeItemId}
                         onToggle={toggleSection}
-                        onSelect={setActiveItemId}
+                        onSelect={navigateToModule}
                       />
                     ))}
                   </ul>
@@ -539,11 +572,11 @@ function DashboardPage({ user, onLogout }) {
                 activeItemId={activeItemId}
                 user={user}
                 selectedExpense={selectedExpense}
-                onNavigate={setActiveItemId}
+                onNavigate={navigateToModule}
                 onOpenExpense={setSelectedExpense}
                 onBackToManager={() => {
                   setSelectedExpense(null);
-                  setActiveItemId('daily-expense-manager');
+                  navigateToModule('daily-expense-manager');
                 }}
               />
             </div>

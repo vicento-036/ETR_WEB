@@ -1,5 +1,5 @@
 import React from 'react';
-import LoginLayout from '../features/login/components/LoginLayout';
+import LoginLayout from './LoginLayout.jsx';
 
 function LoginPage({ onLoginSuccess }) {
   return <LoginLayout onLoginSuccess={onLoginSuccess} />;

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getToken } from '../../services/authStorage';
-import './ExpenseEntry.css';
+import { getToken } from '../services/authStorage';
+import '../css/Dailyexpensemanager.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
