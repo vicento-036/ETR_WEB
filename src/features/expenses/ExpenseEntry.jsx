@@ -562,6 +562,7 @@ export default function ExpenseEntryView({
   const [page, setPage] = useState(1);
   const [selectedAttachmentFile, setSelectedAttachmentFile] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [isAttachmentPreviewLoading, setIsAttachmentPreviewLoading] = useState(false);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -798,7 +799,6 @@ export default function ExpenseEntryView({
 
   useEffect(() => {
     if (selectedExpense) {
-      const controller = new AbortController();
       const existingPreview = createExistingAttachmentPreview(selectedExpense);
 
       revokeAttachmentObjectUrl();
@@ -810,24 +810,11 @@ export default function ExpenseEntryView({
       setIsEditingDetail(false);
       setDetailStatus(selectedExpense.status || 'Pending');
       setIsAttachmentViewerOpen(false);
+      setIsAttachmentPreviewLoading(false);
       setAttachmentPreview(existingPreview);
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
       }
-
-      loadExistingAttachmentPreview(selectedExpense, controller.signal)
-        .then((preview) => {
-          if (!controller.signal.aborted) {
-            setAttachmentPreview(preview);
-          }
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setAttachmentPreview(existingPreview);
-          }
-        });
-
-      return () => controller.abort();
     }
   }, [selectedExpense]);
 
@@ -1317,17 +1304,44 @@ export default function ExpenseEntryView({
     attachmentInputRef.current?.click();
   };
 
-  const handlePreviewAttachment = () => {
+  const handlePreviewAttachment = async () => {
     if (!attachmentPreview?.url) {
+      return;
+    }
+
+    if (!attachmentPreview.isObjectUrl && !/^(blob:|data:)/i.test(attachmentPreview.url) && selectedExpense) {
+      const controller = new AbortController();
+
+      try {
+        setIsAttachmentPreviewLoading(true);
+        const preview = await loadExistingAttachmentPreview(selectedExpense, controller.signal);
+
+        if (preview) {
+          setAttachmentPreview(preview);
+
+          if (preview.isImage) {
+            setIsAttachmentViewerOpen(true);
+          } else if (preview.url) {
+            window.open(preview.url, '_blank', 'noopener,noreferrer');
+          }
+        }
+      } catch {
+        setErrors((current) => ({
+          ...current,
+          attachment: 'Unable to load attachment preview.',
+        }));
+      } finally {
+        setIsAttachmentPreviewLoading(false);
+      }
+
       return;
     }
 
     if (attachmentPreview.isImage) {
       setIsAttachmentViewerOpen(true);
-      return;
+    } else {
+      window.open(attachmentPreview.url, '_blank', 'noopener,noreferrer');
     }
-
-    window.open(attachmentPreview.url, '_blank', 'noopener,noreferrer');
   };
 
   const handleRemoveAttachment = () => {
@@ -1602,10 +1616,15 @@ export default function ExpenseEntryView({
               type="button"
               className={`etr-expense-preview ${attachmentPreview?.url ? 'is-clickable' : ''}`}
               onClick={handlePreviewAttachment}
-              disabled={!attachmentPreview?.url}
+              disabled={!attachmentPreview?.url || isAttachmentPreviewLoading}
               aria-label={attachmentPreview?.url ? `View ${attachmentPreview.name}` : 'No attachment preview available'}
             >
-              {attachmentPreview?.url ? (
+              {isAttachmentPreviewLoading ? (
+                <div>
+                  <strong>{attachmentPreview?.name || formData.attachment || 'Attachment'}</strong>
+                  <span>Loading preview...</span>
+                </div>
+              ) : attachmentPreview?.url ? (
                 attachmentPreview.isImage ? (
                   <img src={attachmentPreview.url} alt={attachmentPreview.name} />
                 ) : (
