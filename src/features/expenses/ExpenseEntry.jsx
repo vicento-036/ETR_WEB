@@ -845,13 +845,13 @@ export default function ExpenseEntryView({
 
   const updateForm = (event) => {
     const { name, value } = event.target;
-    
+
     // Validate employee name: prevent numbers
     if (name === 'employeeName') {
       // Remove any numbers from the input
       const cleanedValue = value.replace(/[0-9]/g, '');
       setFormData((current) => ({ ...current, [name]: cleanedValue }));
-      
+
       // Show error if user tried to enter numbers
       if (cleanedValue !== value) {
         setErrors((current) => ({ ...current, [name]: 'Employee name cannot contain numbers.' }));
@@ -975,7 +975,7 @@ export default function ExpenseEntryView({
     if (formData.description.length > MAX_DESCRIPTION_LENGTH) nextErrors.description = `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
     if (!formData.attachment.trim()) nextErrors.attachment = 'Attachment is required.';
     if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
-    
+
     const amount = parseMoney(formData.amount);
     const vat = parseMoney(formData.vat);
     if (sanitizeMoneyInput(formData.amount).hasInvalidCharacters) nextErrors.amount = MONEY_INPUT_WARNING;
@@ -1080,10 +1080,10 @@ export default function ExpenseEntryView({
             setExpenseRows((current) => current.map((row) => (
               row.expenseId === data.expenseId
                 ? {
-                    ...row,
-                    attachment: savedAttachmentUrl || row.attachment,
-                    attachmentUrl: authenticatedUrl || row.attachmentUrl,
-                  }
+                  ...row,
+                  attachment: savedAttachmentUrl || row.attachment,
+                  attachmentUrl: authenticatedUrl || row.attachmentUrl,
+                }
                 : row
             )));
           })

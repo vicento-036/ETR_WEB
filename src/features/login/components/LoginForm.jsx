@@ -88,20 +88,24 @@ function LoginForm({ onLoginSuccess }) {
       const sessionData = buildSessionData(data, selectedProfile, username);
 
       saveAuth(sessionData);
+      const warmupResponse = await fetch(buildApiUrl('/api/cache/warmup'), {
+        headers: {
+          Authorization: `Bearer ${sessionData.accessToken}`,
+        },
+      });
+
+      if (!warmupResponse.ok) {
+        clearAuth();
+        setMessage('Login succeeded, but the database could not be prepared. Please try again.');
+        return;
+      }
+
       onLoginSuccess?.(sessionData.user);
     } catch (error) {
-      setMessage('Hindi ma-reach ang WebAPI. Pwede mong i-click ang "Preview Dashboard" para makita ang UI, o paandarin ang ASP.NET WebAPI sa http://localhost:5074.');
+      setMessage('Unable to reach the WebAPI. Start the ASP.NET WebAPI at http://localhost:5074 before signing in.');
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handlePreviewDashboard = () => {
-    setMessage('');
-    onLoginSuccess?.({
-      username: username || 'Executive Service Account',
-      profile: selectedProfile,
-    });
   };
 
   return (
@@ -165,10 +169,6 @@ function LoginForm({ onLoginSuccess }) {
 
       <button type="submit" className="etr-signin-button" disabled={isSubmitting}>
         {isSubmitting ? 'Signing In...' : 'Sign In'}
-      </button>
-
-      <button type="button" className="etr-preview-button" onClick={handlePreviewDashboard}>
-        Preview Dashboard
       </button>
 
       <div className="etr-login-links">
