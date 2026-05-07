@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import LoginPage from './Login.jsx';
 import DashboardPage from './Dashboard.jsx';
 import appLogo from '../assets/branding/etr-logo.png';
@@ -22,6 +23,8 @@ function getStoredUser() {
 function App() {
   const [sessionUser, setSessionUser] = useState(getStoredUser);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'ETR-WEB';
@@ -55,35 +58,65 @@ function App() {
       setIsLogoutConfirmOpen(false);
       clearAuth();
       setSessionUser(null);
+      navigate('/login', { replace: true });
     }
   };
 
-  if (sessionUser) {
-    return (
-      <>
-        <DashboardPage user={sessionUser} onLogout={() => setIsLogoutConfirmOpen(true)} />
+  const handleLoginSuccess = (user) => {
+    setSessionUser(user);
+    const redirectPath = location.state?.from?.pathname || '/dashboard';
+    navigate(redirectPath, { replace: true });
+  };
 
-        {isLogoutConfirmOpen ? (
-          <div className="etr-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
-            <div className="etr-confirm-modal">
-              <h2 id="logout-confirm-title">Confirm Logout</h2>
-              <p>Are you sure you want to log out?</p>
-              <div className="etr-confirm-actions">
-                <button type="button" className="etr-confirm-secondary" onClick={() => setIsLogoutConfirmOpen(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="etr-confirm-primary" onClick={confirmLogout}>
-                  Logout
-                </button>
-              </div>
+  return (
+    <>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            sessionUser
+              ? <Navigate to="/dashboard" replace />
+              : <LoginPage onLoginSuccess={handleLoginSuccess} />
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            sessionUser
+              ? <DashboardPage user={sessionUser} onLogout={() => setIsLogoutConfirmOpen(true)} />
+              : <Navigate to="/login" replace state={{ from: location }} />
+          }
+        />
+        <Route
+          path="/dashboard/:moduleId"
+          element={
+            sessionUser
+              ? <DashboardPage user={sessionUser} onLogout={() => setIsLogoutConfirmOpen(true)} />
+              : <Navigate to="/login" replace state={{ from: location }} />
+          }
+        />
+        <Route path="/" element={<Navigate to={sessionUser ? '/dashboard' : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={sessionUser ? '/dashboard' : '/login'} replace />} />
+      </Routes>
+
+      {isLogoutConfirmOpen ? (
+        <div className="etr-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+          <div className="etr-confirm-modal">
+            <h2 id="logout-confirm-title">Confirm Logout</h2>
+            <p>Are you sure you want to log out?</p>
+            <div className="etr-confirm-actions">
+              <button type="button" className="etr-confirm-secondary" onClick={() => setIsLogoutConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="etr-confirm-primary" onClick={confirmLogout}>
+                Logout
+              </button>
             </div>
           </div>
-        ) : null}
-      </>
-    );
-  }
-
-  return <LoginPage onLoginSuccess={setSessionUser} />;
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export default App;
