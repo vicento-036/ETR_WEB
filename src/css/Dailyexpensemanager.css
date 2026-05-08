@@ -7,6 +7,7 @@
 }
 
 .etr-expense-toolbar {
+  min-width: 0;
   border: 1px solid var(--etr-dashboard-line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.9);
@@ -30,7 +31,7 @@
 .etr-expense-toolbar h1 {
   margin: 0;
   color: #12314e;
-  font-size: 1.35rem;
+  font-size: clamp(1.12rem, 1vw + 0.95rem, 1.35rem);
   line-height: 1.2;
 }
 
@@ -46,6 +47,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+  min-width: 0;
 }
 
 .etr-expense-actions button {
@@ -94,6 +96,7 @@
 }
 
 .etr-expense-table-head {
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -285,6 +288,7 @@
 
 .etr-expense-pagination {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
@@ -343,16 +347,56 @@
 }
 
 @media (max-width: 640px) {
+  .etr-expense-entry {
+    gap: 12px;
+  }
+
   .etr-expense-toolbar,
   .etr-expense-table-panel {
-    padding: 14px;
+    padding: 12px;
+  }
+
+  .etr-expense-toolbar {
+    gap: 12px;
+  }
+
+  .etr-expense-toolbar span {
+    font-size: 0.84rem;
+    line-height: 1.45;
   }
 
   .etr-expense-actions button {
     flex: 1 1 110px;
+    min-height: 40px;
+    padding: 0 10px;
   }
 
   .etr-expense-table {
-    min-width: 1320px;
+    min-width: 1040px;
+    font-size: 0.8rem;
+  }
+
+  .etr-expense-manager-table {
+    min-width: 1180px;
+  }
+
+  .etr-expense-table th,
+  .etr-expense-table td {
+    padding: 10px;
+  }
+
+  .etr-expense-pagination {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .etr-expense-pagination > span {
+    flex: 1 0 100%;
+  }
+
+  .etr-expense-page-numbers {
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 }

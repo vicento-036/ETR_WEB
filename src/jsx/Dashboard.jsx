@@ -281,6 +281,8 @@ function DashboardPage({ user, onLogout }) {
   const navigate = useNavigate();
   const { moduleId = '' } = useParams();
   const [sidebarWidth, setSidebarWidth] = useState(398);
+  const [isSidebarDrawerOpen, setIsSidebarDrawerOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -291,6 +293,7 @@ function DashboardPage({ user, onLogout }) {
     startWidth: 398,
   });
   const searchBlurTimeoutRef = useRef(null);
+  const profileMenuRef = useRef(null);
   const activeItemId = moduleId;
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
@@ -325,6 +328,7 @@ function DashboardPage({ user, onLogout }) {
       setSelectedExpense(null);
     }
 
+    setIsSidebarDrawerOpen(false);
     navigate(itemId ? `/dashboard/${itemId}` : '/dashboard');
   };
 
@@ -386,7 +390,35 @@ function DashboardPage({ user, onLogout }) {
     }
   }, []);
 
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (!profileMenuRef.current || profileMenuRef.current.contains(event.target)) {
+        return;
+      }
+
+      setIsProfileMenuOpen(false);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const handleResizeStart = (event) => {
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      return;
+    }
+
     dragStateRef.current = {
       isDragging: true,
       startX: event.clientX,
@@ -398,6 +430,12 @@ function DashboardPage({ user, onLogout }) {
   };
 
   const handleShowSidebar = () => {
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      setSidebarWidth((currentWidth) => (currentWidth > 0 ? currentWidth : 398));
+      setIsSidebarDrawerOpen((isOpen) => !isOpen);
+      return;
+    }
+
     setSidebarWidth(sidebarWidth > 0 ? 0 : 398);
   };
 
@@ -418,6 +456,8 @@ function DashboardPage({ user, onLogout }) {
 
     if (entry.isSelectable) {
       navigateToModule(entry.id);
+    } else if (window.matchMedia('(max-width: 900px)').matches) {
+      setIsSidebarDrawerOpen(true);
     }
 
     if (sidebarWidth <= 0) {
@@ -462,6 +502,7 @@ function DashboardPage({ user, onLogout }) {
           className="etr-dashboard-menu-button"
           onClick={handleShowSidebar}
           aria-label="Toggle sidebar"
+          aria-expanded={isSidebarDrawerOpen || sidebarWidth > 0}
         >
           <span />
           <span />
@@ -508,20 +549,52 @@ function DashboardPage({ user, onLogout }) {
           ) : null}
         </div>
 
-        <div className="etr-dashboard-account-wrap">
-          <div className="etr-dashboard-avatar">{userInitials}</div>
-          <div className="etr-dashboard-account">
-            <strong>{displayName}</strong>
-            <span>{activeProfile}</span>
-          </div>
-          <button type="button" className="etr-dashboard-logout" onClick={onLogout}>
-            Logout
+        <div className="etr-dashboard-profile" ref={profileMenuRef}>
+          <button
+            type="button"
+            className="etr-dashboard-profile-button"
+            onClick={() => setIsProfileMenuOpen((isOpen) => !isOpen)}
+            aria-label="Open profile menu"
+            aria-expanded={isProfileMenuOpen}
+          >
+            <span className="etr-dashboard-avatar">{userInitials}</span>
           </button>
+
+          {isProfileMenuOpen ? (
+            <div className="etr-dashboard-profile-menu" role="menu">
+              <div className="etr-dashboard-profile-summary">
+                <span className="etr-dashboard-avatar">{userInitials}</span>
+                <div className="etr-dashboard-account">
+                  <strong>{displayName}</strong>
+                  <span>{activeProfile}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="etr-dashboard-logout"
+                onClick={() => {
+                  setIsProfileMenuOpen(false);
+                  onLogout();
+                }}
+                role="menuitem"
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
 
       <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 9px 1fr` }}>
-        <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''}`}>
+        <button
+          type="button"
+          className={`etr-dashboard-sidebar-scrim ${isSidebarDrawerOpen ? 'is-visible' : ''}`}
+          onClick={() => setIsSidebarDrawerOpen(false)}
+          aria-label="Close sidebar"
+        />
+
+        <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''} ${isSidebarDrawerOpen ? 'is-drawer-open' : ''}`}>
           {sidebarSections.map((section) => {
             const isOpen = !!openSections[section.id];
 
