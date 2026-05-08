@@ -11,12 +11,14 @@
 html,
 body,
 #root {
+  width: 100%;
   min-height: 100%;
   margin: 0;
 }
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 a {
@@ -26,4 +28,9 @@ a {
 button,
 input {
   font: inherit;
+}
+
+img,
+svg {
+  max-width: 100%;
 }

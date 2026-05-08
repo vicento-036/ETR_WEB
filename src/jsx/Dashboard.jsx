@@ -391,6 +391,7 @@ function DashboardPage({ user, onLogout }) {
   useEffect(() => {
     if (!activeItemId) {
       return;
+      
     }
 
     const hasVisibleActiveItem = searchIndex.some((entry) => entry.id === activeItemId && entry.isSelectable);
@@ -655,10 +656,6 @@ function DashboardPage({ user, onLogout }) {
       </header>
 
       <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 9px 1fr` }}>
-<<<<<<< HEAD
-        <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''}`}>
-          {filteredSidebarSections.map((section) => {
-=======
         <button
           type="button"
           className={`etr-dashboard-sidebar-scrim ${isSidebarDrawerOpen ? 'is-visible' : ''}`}
@@ -667,8 +664,7 @@ function DashboardPage({ user, onLogout }) {
         />
 
         <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''} ${isSidebarDrawerOpen ? 'is-drawer-open' : ''}`}>
-          {sidebarSections.map((section) => {
->>>>>>> 0b353f219936685537de0bbea1ae2ac2faa6e4a9
+          {filteredSidebarSections.map((section) => {
             const isOpen = !!openSections[section.id];
 
             return (
