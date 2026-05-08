@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import DailyExpenseManager from './Dailyexpensemanager.jsx';
 import ExpenseEntryView from './Dailyexpense.jsx';
 
+const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}';
+const DAILY_EXPENSE_MANAGER_DESCRIPTION = '{F9108E90-4118-49F1-96C5-640D98B3EED8}';
+
 const sidebarSections = [
   {
     id: 'sales',
@@ -73,6 +76,54 @@ const sidebarSections = [
     ],
   },
 ];
+
+function getUserAccessDescriptions(user) {
+  if (!user) {
+    return new Set();
+  }
+
+  const rawDescriptions = [
+    ...(Array.isArray(user.accessDescriptions) ? user.accessDescriptions : []),
+    ...(Array.isArray(user.AccessDescriptions) ? user.AccessDescriptions : []),
+  ];
+
+  return new Set(
+    rawDescriptions
+      .map((description) => (typeof description === 'string' ? description.trim() : ''))
+      .filter(Boolean),
+  );
+}
+
+function filterSidebarSectionsByAccess(sections, user) {
+  const accessDescriptions = getUserAccessDescriptions(user);
+  const hasDailyExpenseEntryAccess = accessDescriptions.has(DAILY_EXPENSE_ENTRY_DESCRIPTION);
+  const hasDailyExpenseManagerAccess = accessDescriptions.has(DAILY_EXPENSE_MANAGER_DESCRIPTION);
+
+  return sections
+    .map((section) => {
+      if (section.id !== 'finance') {
+        return section;
+      }
+
+      const children = section.children.filter((item) => {
+        if (item.id === 'expense-entry') {
+          return hasDailyExpenseEntryAccess;
+        }
+
+        if (item.id === 'daily-expense-manager') {
+          return hasDailyExpenseManagerAccess;
+        }
+
+        return true;
+      });
+
+      return {
+        ...section,
+        children,
+      };
+    })
+    .filter((section) => section.children.length > 0);
+}
 
 function getClosedSidebarState(sections) {
   const state = {};
@@ -280,11 +331,12 @@ function DashboardNode({ item, level, openItems, activeItemId, onToggle, onSelec
 function DashboardPage({ user, onLogout }) {
   const navigate = useNavigate();
   const { moduleId = '' } = useParams();
+  const filteredSidebarSections = useMemo(() => filterSidebarSectionsByAccess(sidebarSections, user), [user]);
   const [sidebarWidth, setSidebarWidth] = useState(398);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [openSections, setOpenSections] = useState(() => getClosedSidebarState(sidebarSections));
+  const [openSections, setOpenSections] = useState(() => getClosedSidebarState(filteredSidebarSections));
   const dragStateRef = useRef({
     isDragging: false,
     startX: 0,
@@ -295,7 +347,7 @@ function DashboardPage({ user, onLogout }) {
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
   const activeProfile = getUserProfile(user);
-  const searchIndex = useMemo(() => buildSearchIndex(sidebarSections), []);
+  const searchIndex = useMemo(() => buildSearchIndex(filteredSidebarSections), [filteredSidebarSections]);
   const trimmedSearchQuery = searchQuery.trim().toLowerCase();
   const searchResults = useMemo(() => {
     if (!trimmedSearchQuery) {
@@ -327,6 +379,22 @@ function DashboardPage({ user, onLogout }) {
 
     navigate(itemId ? `/dashboard/${itemId}` : '/dashboard');
   };
+
+  useEffect(() => {
+    setOpenSections(getClosedSidebarState(filteredSidebarSections));
+  }, [filteredSidebarSections]);
+
+  useEffect(() => {
+    if (!activeItemId) {
+      return;
+    }
+
+    const hasVisibleActiveItem = searchIndex.some((entry) => entry.id === activeItemId && entry.isSelectable);
+
+    if (!hasVisibleActiveItem) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [activeItemId, navigate, searchIndex]);
 
   useEffect(() => {
     if (!activeItemId) {
@@ -522,7 +590,7 @@ function DashboardPage({ user, onLogout }) {
 
       <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 9px 1fr` }}>
         <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''}`}>
-          {sidebarSections.map((section) => {
+          {filteredSidebarSections.map((section) => {
             const isOpen = !!openSections[section.id];
 
             return (
