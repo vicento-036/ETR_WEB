@@ -16,9 +16,46 @@ const MAX_DOCUMENT_REFERENCE_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 255;
 const MAX_TIN_DIGITS = 14;
 const MONEY_INPUT_WARNING = 'input numbers only.';
+const EXPENSE_STATUS = {
+  PENDING: 0,
+  APPROVED: 1,
+  REJECTED: 2,
+};
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
+function normalizeExpenseStatusValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (normalized === 'approved' || normalized === '1') {
+    return EXPENSE_STATUS.APPROVED;
+  }
+
+  if (normalized === 'rejected' || normalized === '2') {
+    return EXPENSE_STATUS.REJECTED;
+  }
+
+  return EXPENSE_STATUS.PENDING;
+}
+
+function getExpenseStatusLabel(value) {
+  const normalizedValue = normalizeExpenseStatusValue(value);
+
+  if (normalizedValue === EXPENSE_STATUS.APPROVED) {
+    return 'Approved';
+  }
+
+  if (normalizedValue === EXPENSE_STATUS.REJECTED) {
+    return 'Rejected';
+  }
+
+  return 'Pending';
 }
 
 const dailyExpenseColumns = [
@@ -567,10 +604,19 @@ export default function ExpenseEntryView({
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isEditingDetail, setIsEditingDetail] = useState(false);
-  const [detailStatus, setDetailStatus] = useState('');
+  const [detailStatus, setDetailStatus] = useState(EXPENSE_STATUS.PENDING);
+  const [permissions, setPermissions] = useState({
+    canCreate: false,
+    canDelete: false,
+    canEdit: false,
+    canSearch: false,
+    canApprove: false,
+    canReject: false,
+  });
   const isDetailMode = !!selectedExpense;
-  const isApprovedDetail = detailStatus.toLowerCase() === 'approved';
-  const isReadOnlyDetail = isDetailMode && (!isEditingDetail || isApprovedDetail);
+  const isApprovedDetail = normalizeExpenseStatusValue(detailStatus) === EXPENSE_STATUS.APPROVED;
+  const isRejectedDetail = normalizeExpenseStatusValue(detailStatus) === EXPENSE_STATUS.REJECTED;
+  const isReadOnlyDetail = isDetailMode && (!isEditingDetail || isApprovedDetail || isRejectedDetail);
   const total = parseMoney(formData.amount) + parseMoney(formData.vat);
   const pageSize = 2;
   const totalPages = Math.max(1, Math.ceil(expenseRows.length / pageSize));
@@ -620,6 +666,51 @@ export default function ExpenseEntryView({
 
   useEffect(() => () => {
     revokeAttachmentObjectUrl();
+  }, []);
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      try {
+        const token = getToken();
+        const response = await fetch(buildApiUrl('/api/account-titles/permissions'), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setPermissions({
+            canCreate: false,
+            canDelete: false,
+            canEdit: false,
+            canSearch: false,
+            canApprove: false,
+            canReject: false,
+          });
+          return;
+        }
+
+        setPermissions({
+          canCreate: data.canCreate ?? false,
+          canDelete: data.canDelete ?? false,
+          canEdit: data.canEdit ?? false,
+          canSearch: data.canSearch ?? false,
+          canApprove: data.canApprove ?? false,
+          canReject: data.canReject ?? false,
+        });
+      } catch (error) {
+        console.error('Failed to load permissions', error);
+        setPermissions({
+          canCreate: false,
+          canDelete: false,
+          canEdit: false,
+          canSearch: false,
+          canApprove: false,
+          canReject: false,
+        });
+      }
+    };
+    loadPermissions();
   }, []);
 
   const uploadAttachmentFile = async (expenseId, file, token) => {
@@ -808,7 +899,7 @@ export default function ExpenseEntryView({
       setSaveError('');
       setSaveMessage('');
       setIsEditingDetail(false);
-      setDetailStatus(selectedExpense.status || 'Pending');
+      setDetailStatus(normalizeExpenseStatusValue(selectedExpense.statusValue ?? selectedExpense.status));
       setIsAttachmentViewerOpen(false);
       setAttachmentPreview(existingPreview);
       if (attachmentInputRef.current) {
@@ -1036,6 +1127,8 @@ export default function ExpenseEntryView({
 
       const nextRow = {
         expenseId: data.expenseId,
+        status: getExpenseStatusLabel(EXPENSE_STATUS.PENDING),
+        statusValue: EXPENSE_STATUS.PENDING,
         employeeNo: responseEmployeeNo,
         employeeName: responseEmployeeName,
         date: formatDateForTable(currentFormData.date),
@@ -1113,7 +1206,7 @@ export default function ExpenseEntryView({
     expenseType: Number(formData.expenseTypeId),
     costUnitID: Number(formData.costUnitId),
     attachment: selectedAttachmentFile ? '' : formData.attachment || '',
-    status,
+    status: normalizeExpenseStatusValue(status),
   });
 
   const handleUpdateDetail = async () => {
@@ -1133,7 +1226,7 @@ export default function ExpenseEntryView({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(buildUpdatePayload(detailStatus || selectedExpense.status || 'Pending')),
+        body: JSON.stringify(buildUpdatePayload(detailStatus)),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -1178,7 +1271,7 @@ export default function ExpenseEntryView({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(buildUpdatePayload('Approved')),
+        body: JSON.stringify(buildUpdatePayload(EXPENSE_STATUS.APPROVED)),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -1197,11 +1290,57 @@ export default function ExpenseEntryView({
       }
 
       setIsEditingDetail(false);
-      setDetailStatus('Approved');
+      setDetailStatus(EXPENSE_STATUS.APPROVED);
       setSelectedAttachmentFile(null);
       setSaveMessage(attachmentData?.message || data.message || 'Daily expense approved successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to approve daily expense.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedExpense?.expenseId || !validateForm()) {
+      return;
+    }
+
+    const token = getToken();
+    setIsSaving(true);
+    setSaveMessage('');
+    setSaveError('');
+
+    try {
+      const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${selectedExpense.expenseId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(buildUpdatePayload(EXPENSE_STATUS.REJECTED)),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(getValidationMessage(data));
+      }
+
+      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
+      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+        setFormData((current) => ({
+          ...current,
+          attachment: attachmentData.attachmentUrl || current.attachment,
+          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+        }));
+      }
+
+      setIsEditingDetail(false);
+      setDetailStatus(EXPENSE_STATUS.REJECTED);
+      setSelectedAttachmentFile(null);
+      setSaveMessage(attachmentData?.message || data.message || 'Daily expense rejected successfully.');
+    } catch (error) {
+      setSaveError(error.message || 'Unable to reject daily expense.');
     } finally {
       setIsSaving(false);
     }
@@ -1356,17 +1495,22 @@ export default function ExpenseEntryView({
           {isDetailMode ? (
             <>
               <button type="button" onClick={onBack} disabled={isSaving}>Back</button>
-              {!isApprovedDetail ? (
+              {!isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
                 <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSaving}>
                   {isEditingDetail ? 'Cancel Edit' : 'Edit'}
                 </button>
               ) : null}
-              {isEditingDetail && !isApprovedDetail ? (
+              {isEditingDetail && !isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
                 <button type="button" className="etr-expense-save-button" onClick={handleUpdateDetail} disabled={isSaving}>
                   {isSaving ? 'Saving...' : 'Save'}
                 </button>
               ) : null}
-              {!isApprovedDetail ? (
+              {!isApprovedDetail && !isRejectedDetail && permissions?.canReject ? (
+                <button type="button" onClick={handleReject} disabled={isSaving}>
+                  {isSaving ? 'Rejecting...' : 'Reject'}
+                </button>
+              ) : null}
+              {!isApprovedDetail && !isRejectedDetail && permissions?.canApprove ? (
                 <button type="button" className="etr-expense-save-button" onClick={handleApprove} disabled={isSaving}>
                   {isSaving ? 'Approving...' : 'Approve'}
                 </button>
@@ -1374,8 +1518,8 @@ export default function ExpenseEntryView({
             </>
           ) : (
             <>
-              <button type="button" onClick={handleClear} disabled={isSaving}>New</button>
-              <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button>
+              {permissions?.canCreate ? <button type="button" onClick={handleClear} disabled={isSaving}>New</button> : null}
+              {permissions?.canCreate ? <button type="button" className="etr-expense-save-button" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save'}</button> : null}
             </>
           )}
         </div>
@@ -1630,7 +1774,7 @@ export default function ExpenseEntryView({
           </section>
 
           <div className="etr-expense-approval-note">
-            {isDetailMode ? `Current status: ${detailStatus || selectedExpense?.status || 'Pending'}` : 'Existing expense records are view-only. Changes must go through approval.'}
+            {isDetailMode ? `Current status: ${getExpenseStatusLabel(detailStatus ?? selectedExpense?.statusValue ?? selectedExpense?.status)}` : 'Existing expense records are view-only. Changes must go through approval.'}
           </div>
         </aside>
       </div>
