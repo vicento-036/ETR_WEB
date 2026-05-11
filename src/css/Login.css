@@ -470,39 +470,44 @@
   }
 
   .etr-login-card {
-    grid-template-rows: minmax(0, 34%) 1px minmax(0, 66%);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
     border: 0;
     border-radius: 0;
   }
 
   .etr-login-showcase {
-    padding: clamp(18px, 5svh, 34px) 24px clamp(12px, 2.4svh, 20px);
+    flex: 0 0 auto;
+    align-content: start;
+    padding: clamp(24px, 4svh, 36px) 30px 0;
   }
 
   .etr-showcase-title {
-    margin-bottom: clamp(10px, 2.2svh, 16px);
-    font-size: clamp(1rem, 4.8vw, 1.22rem);
+    margin-bottom: clamp(22px, 3.2svh, 30px);
+    font-size: clamp(1.14rem, 5.2vw, 1.36rem);
     letter-spacing: 0.07em;
   }
 
   .etr-logo-shell {
-    width: min(100%, 320px);
-    height: clamp(102px, 18svh, 154px);
-    padding: clamp(12px, 3svh, 18px);
-    border-radius: 20px;
+    width: min(100%, 362px);
+    height: clamp(190px, 25svh, 214px);
+    padding: clamp(16px, 2.7svh, 22px);
+    border-radius: 22px;
   }
 
   .etr-showcase-logo {
-    width: min(100%, 250px);
+    width: min(100%, 305px);
   }
 
   .etr-login-divider {
-    margin: 0 24px;
+    display: none;
   }
 
   .etr-login-form-panel {
+    flex: 0 0 auto;
     align-items: start;
-    padding: clamp(18px, 4.5svh, 32px) 28px 18px;
+    padding: clamp(54px, 8svh, 76px) 30px 18px;
   }
 
   .etr-login-form {
@@ -510,13 +515,13 @@
   }
 
   .etr-login-form h2 {
-    margin-bottom: clamp(16px, 3.2svh, 24px);
+    margin-bottom: clamp(22px, 3.3svh, 28px);
     padding-bottom: 9px;
-    font-size: clamp(1.32rem, 6vw, 1.58rem);
+    font-size: clamp(1.42rem, 6vw, 1.68rem);
   }
 
   .etr-input-box {
-    margin-bottom: clamp(10px, 2.2svh, 16px);
+    margin-bottom: clamp(12px, 2.4svh, 18px);
   }
 
   .etr-form-input {
@@ -533,7 +538,7 @@
 
   .etr-signin-button {
     height: clamp(42px, 6.4svh, 50px);
-    margin-top: clamp(10px, 2.2svh, 16px);
+    margin-top: clamp(14px, 2.6svh, 20px);
   }
 
   .etr-login-links {
@@ -544,35 +549,34 @@
 
 @media (max-width: 390px) and (orientation: portrait), (max-height: 720px) and (max-width: 640px) and (orientation: portrait) {
   .etr-login-card {
-    grid-template-rows: minmax(0, 30%) 1px minmax(0, 70%);
+    display: flex;
   }
 
   .etr-login-showcase {
-    padding-top: 16px;
-    padding-bottom: 10px;
+    padding-top: 18px;
   }
 
   .etr-showcase-title {
-    margin-bottom: 8px;
-    font-size: 0.98rem;
+    margin-bottom: 14px;
+    font-size: 1rem;
   }
 
   .etr-logo-shell {
-    height: clamp(86px, 16svh, 120px);
-    padding: 10px;
+    height: clamp(132px, 21svh, 158px);
+    padding: 12px;
   }
 
   .etr-showcase-logo {
-    width: min(100%, 220px);
+    width: min(100%, 250px);
   }
 
   .etr-login-form-panel {
-    padding-top: 16px;
+    padding-top: clamp(30px, 5.4svh, 46px);
   }
 
   .etr-login-form h2 {
-    margin-bottom: 14px;
-    font-size: 1.24rem;
+    margin-bottom: 16px;
+    font-size: 1.3rem;
   }
 
   .etr-input-box {
