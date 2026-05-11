@@ -10,13 +10,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 24%),
     radial-gradient(circle at top right, rgba(113, 181, 255, 0.22), transparent 26%),
     linear-gradient(180deg, #d8e9f8 0%, #eef5fb 100%);
-  padding: 48px 24px;
+  padding: clamp(18px, 5vh, 48px) 24px;
 }
 
 .etr-login-bg {
@@ -48,7 +50,8 @@
   grid-template-columns: minmax(560px, 1.06fr) 1px minmax(410px, 0.94fr);
   align-items: center;
   width: min(1250px, 100%);
-  min-height: 650px;
+  height: min(650px, 100%);
+  min-height: 0;
   border: 1px solid rgba(157, 191, 236, 0.45);
   border-radius: 32px;
   background:
@@ -62,7 +65,8 @@
 .etr-login-showcase {
   width: 100%;
   max-width: 100%;
-  padding: 66px 58px 84px 66px;
+  min-height: 0;
+  padding: clamp(38px, 8vh, 66px) 58px clamp(46px, 9vh, 84px) 66px;
   color: var(--etr-login-ink);
 }
 
@@ -118,7 +122,7 @@
 
 .etr-login-divider {
   width: 2px;
-  height: 575px;
+  height: min(575px, calc(100% - 58px));
   justify-self: center;
   align-self: center;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(215, 232, 248, 0.26), rgba(255, 255, 255, 0.02));
@@ -130,7 +134,8 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 68px 62px 60px 54px;
+  min-height: 0;
+  padding: clamp(38px, 8vh, 68px) 62px clamp(36px, 7vh, 60px) 54px;
 }
 
 .etr-login-form {
@@ -298,11 +303,18 @@
   color: #eef6ff;
   font-size: 0.92rem;
   line-height: 1.5;
+  max-height: 3.9em;
+  overflow: hidden;
 }
 
 @media (max-width: 960px) {
   .etr-login-page {
-    padding: 28px 16px;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    align-items: stretch;
+    padding: clamp(12px, 2.2dvh, 18px) clamp(12px, 2.1vw, 18px);
   }
 
   .etr-login-bg-light {
@@ -319,6 +331,10 @@
 
   .etr-login-card {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(218px, 0.48fr) 1px minmax(0, 0.52fr);
+    height: 100%;
+    min-height: 0;
+    border-radius: 28px;
     background:
       radial-gradient(circle at 18% 24%, rgba(255, 255, 255, 0.08), transparent 24%),
       radial-gradient(circle at 84% 18%, rgba(44, 144, 255, 0.14), transparent 28%),
@@ -333,11 +349,58 @@
   }
 
   .etr-login-showcase {
-    padding: 44px 28px 32px;
+    display: grid;
+    align-content: center;
+    padding: clamp(14px, 3.4dvh, 28px) clamp(24px, 4vw, 38px);
+    overflow: hidden;
+  }
+
+  .etr-showcase-title {
+    margin-bottom: clamp(12px, 2dvh, 18px);
+    font-size: clamp(1.18rem, 3.2vw, 1.62rem);
+    line-height: 1.1;
+  }
+
+  .etr-logo-shell {
+    width: min(100%, 620px);
+    height: clamp(150px, 26dvh, 250px);
+    margin: 0 auto;
+    padding: clamp(16px, 3dvh, 24px);
+    border-radius: 24px;
+  }
+
+  .etr-showcase-logo {
+    width: min(100%, 430px);
+    max-height: 100%;
   }
 
   .etr-login-form-panel {
-    padding: 32px 28px 40px;
+    align-items: center;
+    padding: clamp(14px, 3dvh, 28px) 28px clamp(14px, 3.4dvh, 30px);
+    overflow: hidden;
+  }
+
+  .etr-login-form {
+    max-width: 368px;
+  }
+
+  .etr-login-form h2 {
+    margin-bottom: clamp(14px, 2.6dvh, 22px);
+    font-size: clamp(1.28rem, 3vw, 1.5rem);
+    line-height: 1.1;
+  }
+
+  .etr-input-box {
+    margin-bottom: clamp(10px, 1.8dvh, 14px);
+  }
+
+  .etr-form-input {
+    height: clamp(46px, 5.8dvh, 54px);
+  }
+
+  .etr-signin-button {
+    height: clamp(42px, 5.4dvh, 48px);
+    margin: clamp(10px, 2dvh, 14px) 0 0;
   }
 }
 
@@ -368,5 +431,199 @@
   .etr-login-links {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .etr-login-page {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100svh;
+    min-height: 100svh;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 78% 86%, rgba(47, 128, 195, 0.5), transparent 26%),
+      linear-gradient(180deg, #0a2745 0%, #123e6d 61%, #2f80c3 100%);
+  }
+
+  .etr-login-card {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    grid-template-rows: minmax(0, 0.95fr) 1px minmax(0, 1.05fr);
+    align-content: start;
+    background:
+      radial-gradient(circle at 80% 86%, rgba(47, 128, 195, 0.52), transparent 26%),
+      linear-gradient(180deg, #0a2745 0%, #123e6d 62%, #2f80c3 100%);
+  }
+
+  .etr-login-showcase {
+    display: grid;
+    align-content: center;
+    padding: clamp(22px, 5.6svh, 38px) 28px clamp(22px, 4.5svh, 34px);
+  }
+
+  .etr-showcase-title {
+    margin-bottom: clamp(18px, 3.2svh, 26px);
+    font-size: clamp(1.08rem, 5.2vw, 1.28rem);
+    letter-spacing: 0.07em;
+  }
+
+  .etr-logo-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 350px;
+    min-height: 0;
+    height: clamp(128px, 24svh, 200px);
+    margin: 0 auto;
+    border-radius: 28px;
+    padding: clamp(20px, 5svh, 31px) 18px;
+  }
+
+  .etr-logo-shell::before {
+    border-radius: 20px;
+  }
+
+  .etr-showcase-logo {
+    width: min(100%, 280px);
+    flex: 0 1 auto;
+  }
+
+  .etr-login-divider {
+    height: 1px;
+    margin: 0 28px;
+    background: rgba(255, 255, 255, 0.62);
+  }
+
+  .etr-login-form-panel {
+    align-items: center;
+    min-height: 0;
+    padding: clamp(18px, 4.4svh, 36px) 28px 18px;
+    overflow: hidden;
+  }
+
+  .etr-login-form {
+    max-width: none;
+  }
+
+  .etr-login-form h2 {
+    margin-bottom: clamp(18px, 3.5svh, 30px);
+    padding-bottom: 10px;
+    font-size: clamp(1.42rem, 7vw, 1.72rem);
+    letter-spacing: 0.08em;
+  }
+
+  .etr-input-box {
+    margin-bottom: clamp(10px, 2.2svh, 18px);
+  }
+
+  .etr-form-input {
+    height: clamp(48px, 7.3svh, 58px);
+    border-radius: 14px;
+    font-size: 0.9rem;
+  }
+
+  .etr-profile-select {
+    background:
+      linear-gradient(45deg, transparent 50%, #6f88a3 50%) calc(100% - 22px) 32px / 7px 7px no-repeat,
+      linear-gradient(135deg, #6f88a3 50%, transparent 50%) calc(100% - 15px) 32px / 7px 7px no-repeat,
+      linear-gradient(180deg, #f0f7fd 0%, #dfeffc 100%);
+  }
+
+  .etr-signin-button {
+    height: clamp(44px, 6.6svh, 52px);
+    margin: clamp(12px, 2.8svh, 22px) 0 0;
+    border-radius: 14px;
+  }
+
+  .etr-login-message {
+    margin-top: 10px;
+    font-size: 0.84rem;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 380px), (max-height: 760px) and (max-width: 640px) {
+  .etr-login-showcase {
+    padding: 20px 28px 20px;
+  }
+
+  .etr-showcase-title {
+    margin-bottom: 16px;
+    font-size: 1.02rem;
+  }
+
+  .etr-logo-shell {
+    height: 136px;
+    padding: 18px;
+  }
+
+  .etr-showcase-logo {
+    width: min(100%, 240px);
+  }
+
+  .etr-login-form-panel {
+    padding-top: 16px;
+  }
+
+  .etr-login-form h2 {
+    margin-bottom: 20px;
+    font-size: 1.36rem;
+  }
+
+  .etr-input-box {
+    margin-bottom: 10px;
+  }
+
+  .etr-form-input {
+    height: 48px;
+  }
+
+  .etr-signin-button {
+    height: 44px;
+    margin-top: 10px;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 961px) {
+  .etr-login-card {
+    height: 100%;
+  }
+
+  .etr-showcase-title {
+    margin-bottom: 18px;
+    font-size: 1.28rem;
+  }
+
+  .etr-logo-shell {
+    padding: 20px;
+  }
+
+  .etr-showcase-logo {
+    max-height: 360px;
+  }
+
+  .etr-login-form h2 {
+    margin-bottom: 20px;
+  }
+
+  .etr-input-box {
+    margin-bottom: 13px;
+  }
+
+  .etr-form-input {
+    height: 50px;
+  }
+
+  .etr-signin-button {
+    margin-top: 10px;
+    margin-bottom: 12px;
   }
 }

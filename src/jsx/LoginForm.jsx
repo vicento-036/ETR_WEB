@@ -171,11 +171,6 @@ function LoginForm({ onLoginSuccess }) {
         {isSubmitting ? 'Signing In...' : 'Sign In'}
       </button>
 
-      <div className="etr-login-links">
-        <a href="/"></a>
-        <a href="/"></a>
-      </div>
-
       {message ? <p className="etr-login-message">{message}</p> : null}
     </form>
   );
