@@ -286,6 +286,11 @@
   color: #76521d;
 }
 
+.etr-expense-status.rejected {
+  background: #fff1f1;
+  color: #9b2c2c;
+}
+
 .etr-expense-pagination {
   display: flex;
   flex-wrap: wrap;

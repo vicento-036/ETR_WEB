@@ -900,7 +900,12 @@
 
 .etr-expense-status.pending {
   background: #fff8eb;
-  color: #76521d;
+  color: #d88911;
+}
+
+.etr-expense-status.rejected {
+  background: #fff1f1;
+  color: #9b2c2c;
 }
 
 /* Media Queries */

@@ -120,6 +120,52 @@ function normalizeCostUnit(row) {
   };
 }
 
+function normalizeExpenseStatusValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  const normalized = String(value || '').trim().toLowerCase();
+
+  if (normalized === 'approved' || normalized === '1') {
+    return 1;
+  }
+
+  if (normalized === 'rejected' || normalized === '2') {
+    return 2;
+  }
+
+  return 0;
+}
+
+function getExpenseStatusLabel(value) {
+  const normalizedValue = normalizeExpenseStatusValue(value);
+
+  if (normalizedValue === 1) {
+    return 'Approved';
+  }
+
+  if (normalizedValue === 2) {
+    return 'Rejected';
+  }
+
+  return 'Pending';
+}
+
+function getExpenseStatusClassName(value) {
+  const normalizedValue = normalizeExpenseStatusValue(value);
+
+  if (normalizedValue === 1) {
+    return 'approved';
+  }
+
+  if (normalizedValue === 2) {
+    return 'rejected';
+  }
+
+  return 'pending';
+}
+
 function normalizeDailyExpense(row, subsidiaryById = new Map()) {
   const expenseDate = getField(row, ['expenseDate', 'ExpenseDate', 'date', 'Date']);
   const receiptDate = getField(row, ['receiptDate', 'ReceiptDate']);
@@ -147,9 +193,12 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
     || subsidiaryById.get(String(subsidiaryId))
     || getField(row, ['subsidiary', 'Subsidiary', 'costUnit', 'CostUnit']);
 
+  const statusValue = getField(row, ['statusValue', 'StatusValue', 'status', 'Status']);
+
   return {
     expenseId,
-    status: getField(row, ['status', 'Status']) || 'Pending',
+    status: getExpenseStatusLabel(statusValue),
+    statusValue: normalizeExpenseStatusValue(statusValue),
     employeeCode: getField(row, ['employeeCode', 'EmployeeCode', 'employeeNo', 'EmployeeNo']),
     employeeName: getField(row, ['employeeName', 'EmployeeName', 'name', 'Name']),
     date: formatDate(expenseDate),
@@ -390,7 +439,7 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
                   {columns.map((column) => (
                     <td key={column.key} className={column.isNumber ? 'is-number' : ''}>
                       {column.key === 'status' ? (
-                        <span className={`etr-expense-status ${String(row.status).toLowerCase()}`}>
+                        <span className={`etr-expense-status ${getExpenseStatusClassName(row.statusValue)}`}>
                           {row.status}
                         </span>
                       ) : row[column.key]}
