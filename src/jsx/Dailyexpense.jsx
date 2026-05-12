@@ -600,6 +600,8 @@ export default function ExpenseEntryView({
   const [selectedAttachmentFile, setSelectedAttachmentFile] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
+  const [isAttachmentPreviewLoading, setIsAttachmentPreviewLoading] = useState(false);
+  const [attachmentPreviewError, setAttachmentPreviewError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -889,7 +891,6 @@ export default function ExpenseEntryView({
 
   useEffect(() => {
     if (selectedExpense) {
-      const controller = new AbortController();
       const existingPreview = createExistingAttachmentPreview(selectedExpense);
 
       revokeAttachmentObjectUrl();
@@ -902,23 +903,11 @@ export default function ExpenseEntryView({
       setDetailStatus(normalizeExpenseStatusValue(selectedExpense.statusValue ?? selectedExpense.status));
       setIsAttachmentViewerOpen(false);
       setAttachmentPreview(existingPreview);
+      setIsAttachmentPreviewLoading(false);
+      setAttachmentPreviewError('');
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
       }
-
-      loadExistingAttachmentPreview(selectedExpense, controller.signal)
-        .then((preview) => {
-          if (!controller.signal.aborted) {
-            setAttachmentPreview(preview);
-          }
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setAttachmentPreview(existingPreview);
-          }
-        });
-
-      return () => controller.abort();
     }
   }, [selectedExpense]);
 
@@ -1441,6 +1430,8 @@ export default function ExpenseEntryView({
     setFormData((current) => ({ ...current, attachment: file.name, attachmentUrl: '' }));
     setSelectedAttachmentFile(file);
     setErrors((current) => ({ ...current, attachment: '' }));
+    setAttachmentPreviewError('');
+    setIsAttachmentPreviewLoading(false);
     setAttachmentPreview({
       name: file.name,
       size: formatAttachmentSize(file.size),
@@ -1457,16 +1448,51 @@ export default function ExpenseEntryView({
   };
 
   const handlePreviewAttachment = () => {
-    if (!attachmentPreview?.url) {
+    if (!attachmentPreview?.url || isAttachmentPreviewLoading) {
       return;
     }
 
-    if (attachmentPreview.isImage) {
-      setIsAttachmentViewerOpen(true);
+    setIsAttachmentViewerOpen(true);
+  };
+
+  const handleLoadAttachmentPreview = async () => {
+    if (!selectedExpense || selectedAttachmentFile || isAttachmentPreviewLoading) {
       return;
     }
 
-    window.open(attachmentPreview.url, '_blank', 'noopener,noreferrer');
+    const existingPreview = createExistingAttachmentPreview(selectedExpense);
+
+    if (!existingPreview?.url || /^(blob:|data:)/i.test(existingPreview.url)) {
+      if (existingPreview?.url) {
+        setAttachmentPreview(existingPreview);
+        setAttachmentPreviewError('');
+        if (existingPreview.isImage) {
+          setIsAttachmentViewerOpen(true);
+        } else {
+          window.open(existingPreview.url, '_blank', 'noopener,noreferrer');
+        }
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsAttachmentPreviewLoading(true);
+    setAttachmentPreviewError('');
+
+    try {
+      const preview = await loadExistingAttachmentPreview(selectedExpense, controller.signal);
+      setAttachmentPreview(preview);
+      setAttachmentPreviewError('');
+      if (preview?.url) {
+        setIsAttachmentViewerOpen(true);
+      }
+    } catch {
+      setAttachmentPreview(existingPreview);
+      setAttachmentPreviewError('Unable to load attachment preview.');
+    } finally {
+      setIsAttachmentPreviewLoading(false);
+      controller.abort();
+    }
   };
 
   const handleRemoveAttachment = () => {
@@ -1476,11 +1502,24 @@ export default function ExpenseEntryView({
     setSelectedAttachmentFile(null);
     setIsAttachmentViewerOpen(false);
     setAttachmentPreview(null);
+    setIsAttachmentPreviewLoading(false);
+    setAttachmentPreviewError('');
     setErrors((current) => ({ ...current, attachment: '' }));
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = '';
     }
   };
+
+  const shouldLazyLoadAttachmentPreview = Boolean(
+    selectedExpense
+    && !selectedAttachmentFile
+    && attachmentPreview?.url
+    && !attachmentPreview?.isObjectUrl
+    && !/^(blob:|data:)/i.test(attachmentPreview.url)
+  );
+  const canRenderAttachmentThumbnail = Boolean(
+    attachmentPreview?.url && !shouldLazyLoadAttachmentPreview
+  );
 
   return (
     <div className="etr-expense-entry">
@@ -1745,26 +1784,31 @@ export default function ExpenseEntryView({
             <button
               type="button"
               className={`etr-expense-preview ${attachmentPreview?.url ? 'is-clickable' : ''}`}
-              onClick={handlePreviewAttachment}
-              disabled={!attachmentPreview?.url}
+              onClick={shouldLazyLoadAttachmentPreview ? handleLoadAttachmentPreview : handlePreviewAttachment}
+              disabled={!attachmentPreview?.url || isAttachmentPreviewLoading}
               aria-label={attachmentPreview?.url ? `View ${attachmentPreview.name}` : 'No attachment preview available'}
             >
-              {attachmentPreview?.url ? (
-                attachmentPreview.isImage ? (
-                  <img src={attachmentPreview.url} alt={attachmentPreview.name} />
-                ) : (
-                  <div>
-                    <strong>{attachmentPreview.name}</strong>
-                    <span>{attachmentPreview.type} - {attachmentPreview.size}</span>
-                  </div>
-                )
+              {!shouldLazyLoadAttachmentPreview && canRenderAttachmentThumbnail && attachmentPreview.isImage ? (
+                <img src={attachmentPreview.url} alt={attachmentPreview.name} />
               ) : (
                 <div>
                   <strong>{attachmentPreview?.name || formData.attachment || 'Preview area'}</strong>
-                  <span>{attachmentPreview ? `${attachmentPreview.type} - ${attachmentPreview.size}` : `Images and PDF receipts/invoices only. Max ${MAX_ATTACHMENT_LABEL}.`}</span>
+                  <span>
+                    {isAttachmentPreviewLoading
+                      ? 'Loading attachment preview...'
+                      : shouldLazyLoadAttachmentPreview
+                        ? 'Click to load attachment preview.'
+                        : canRenderAttachmentThumbnail
+                          ? `Click to open ${attachmentPreview.isImage ? 'image' : 'document'} preview.`
+                          : attachmentPreview
+                            ? `${attachmentPreview.type} - ${attachmentPreview.size}`
+                            : `Images and PDF receipts/invoices only. Max ${MAX_ATTACHMENT_LABEL}.`}
+                  </span>
                 </div>
               )}
             </button>
+            {isAttachmentPreviewLoading ? <small className="etr-expense-upload-note">Loading attachment...</small> : null}
+            {!isAttachmentPreviewLoading && attachmentPreviewError ? <small className="etr-expense-upload-error">{attachmentPreviewError}</small> : null}
             {formData.attachment && !isReadOnlyDetail ? (
               <div className="etr-expense-attachment-actions">
                 <button type="button" onClick={handleChooseAttachment}>Change</button>
@@ -1779,14 +1823,22 @@ export default function ExpenseEntryView({
         </aside>
       </div>
 
-      {isAttachmentViewerOpen && attachmentPreview?.url && attachmentPreview.isImage ? (
+      {isAttachmentViewerOpen && attachmentPreview?.url ? (
         <div className="etr-expense-viewer-backdrop" role="presentation" onClick={() => setIsAttachmentViewerOpen(false)}>
           <section className="etr-expense-viewer" role="dialog" aria-modal="true" aria-label="Attachment preview" onClick={(event) => event.stopPropagation()}>
             <div className="etr-expense-viewer-head">
               <strong>{attachmentPreview.name}</strong>
               <button type="button" onClick={() => setIsAttachmentViewerOpen(false)} aria-label="Close attachment preview">Close</button>
             </div>
-            <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+            {attachmentPreview.isImage ? (
+              <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+            ) : (
+              <iframe
+                src={attachmentPreview.url}
+                title={attachmentPreview.name}
+                className="etr-expense-viewer-frame"
+              />
+            )}
           </section>
         </div>
       ) : null}
