@@ -7,7 +7,7 @@ const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}'
 const DAILY_EXPENSE_MANAGER_DESCRIPTION = '{F9108E90-4118-49F1-96C5-640D98B3EED8}';
 const REIMBURSEMENT_DEADLINE_DAYS = [6, 21];
 const REIMBURSEMENT_REMINDER_DAYS = [5, 20];
-const REIMBURSEMENT_NOTIFICATION_CUTOFF_HOUR = 15;
+const REIMBURSEMENT_NOTIFICATION_CUTOFF_HOUR = 14;
 
 const sidebarSections = [
   {
@@ -323,12 +323,17 @@ function calculateReimbursementDeadline(today = new Date()) {
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth();
   const isDeadlineToday = REIMBURSEMENT_DEADLINE_DAYS.includes(currentDay);
+  const isReminderDay = REIMBURSEMENT_REMINDER_DAYS.includes(currentDay);
+
+  if (!isDeadlineToday && !isReminderDay) {
+    return null;
+  }
+
   const upcomingDeadlineDay = REIMBURSEMENT_DEADLINE_DAYS.find((deadlineDay) => currentDay <= deadlineDay);
   const deadlineDate = upcomingDeadlineDay
     ? createLocalDate(currentYear, currentMonth, upcomingDeadlineDay)
     : createLocalDate(currentYear, currentMonth + 1, REIMBURSEMENT_DEADLINE_DAYS[0]);
   const deadlineDay = deadlineDate.getDate();
-  const isReminderDay = REIMBURSEMENT_REMINDER_DAYS.includes(currentDay);
 
   if (isDeadlineToday) {
     const notificationMessage = `Urgent: Reimbursement submission deadline is today (${currentDay}).`;
@@ -345,30 +350,20 @@ function calculateReimbursementDeadline(today = new Date()) {
   }
 
   if (isReminderDay) {
-    const notificationMessage = `Reminder: Reimbursement submission deadline is tomorrow (${deadlineDay}).`;
+    const notificationMessage = `Cutoff reminder: Reimbursement submission deadline is tomorrow (${deadlineDay}).`;
 
     return createReimbursementAlertInfo({
       state: 'reminder',
       tone: 'yellow',
       deadlineDay,
       deadlineDate,
-      title: 'Reimbursement reminder',
+      title: 'Cutoff reimbursement reminder',
       notificationMessage,
       badge: 'Due tomorrow',
     });
   }
 
-  const notificationMessage = `Cutoff reminder: Reimbursement submissions due on ${formatDeadlineDate(deadlineDate)}.`;
-
-  return createReimbursementAlertInfo({
-    state: 'reminder',
-    tone: 'yellow',
-    deadlineDay,
-    deadlineDate,
-    title: 'Cutoff Reimbursement Deadline',
-    notificationMessage,
-    badge: 'Upcoming deadline',
-  });
+  return null;
 }
 
 function getReimbursementLoginData(user) {
