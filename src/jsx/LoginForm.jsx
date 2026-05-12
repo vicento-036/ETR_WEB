@@ -12,10 +12,39 @@ function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
 }
 
+function getReimbursementNotification(data) {
+  const explicitNotification = data.reimbursementNotification
+    ?? data.ReimbursementNotification
+    ?? data.reimbursementDeadline
+    ?? data.ReimbursementDeadline
+    ?? data.reimbursementStatus
+    ?? data.ReimbursementStatus
+    ?? data.user?.reimbursementNotification
+    ?? data.user?.ReimbursementNotification
+    ?? null;
+
+  if (explicitNotification) {
+    return explicitNotification;
+  }
+
+  const submitted =
+    data.isReimbursementSubmitted
+    ?? data.IsReimbursementSubmitted
+    ?? data.reimbursementSubmitted
+    ?? data.ReimbursementSubmitted
+    ?? data.hasSubmittedReimbursement
+    ?? data.HasSubmittedReimbursement
+    ?? null;
+
+  return submitted === null ? null : { submitted };
+}
+
 function buildSessionData(data, selectedProfile, username) {
+  const reimbursementNotification = getReimbursementNotification(data);
   const user = {
     ...(data.user ?? { username }),
     profile: data.user?.profile ?? selectedProfile,
+    ...(reimbursementNotification ? { reimbursementNotification } : {}),
   };
 
   return {
