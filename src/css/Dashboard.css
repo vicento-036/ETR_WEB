@@ -1446,7 +1446,8 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
+/* darkr mode
+
   .etr-dashboard-page {
     --etr-dashboard-line: rgba(173, 202, 230, 0.14);
     --etr-dashboard-ink: #dceafb;
@@ -1501,4 +1502,4 @@
     background: rgba(196, 212, 230, 0.14);
     color: #edf6ff;
   }
-}
+} */

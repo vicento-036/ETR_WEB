@@ -285,6 +285,13 @@ function formatDeadlineDate(date) {
   });
 }
 
+function formatReminderShortDate(date) {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 function createLocalDate(year, monthIndex, day) {
   return new Date(year, monthIndex, day);
 }
@@ -336,7 +343,7 @@ function calculateReimbursementDeadline(today = new Date()) {
   const deadlineDay = deadlineDate.getDate();
 
   if (isDeadlineToday) {
-    const notificationMessage = `Urgent: Reimbursement submission deadline is today (${currentDay}).`;
+    const notificationMessage = `Urgent: Reimbursement submission deadline is today (${formatReminderShortDate(currentDate)}).`;
 
     return createReimbursementAlertInfo({
       state: 'deadline',
@@ -350,14 +357,14 @@ function calculateReimbursementDeadline(today = new Date()) {
   }
 
   if (isReminderDay) {
-    const notificationMessage = `Cutoff reminder: Reimbursement submission deadline is tomorrow (${deadlineDay}).`;
+    const notificationMessage = `Reminder: Reimbursement submission deadline is tomorrow (${formatReminderShortDate(deadlineDate)}).`;
 
     return createReimbursementAlertInfo({
       state: 'reminder',
       tone: 'yellow',
       deadlineDay,
       deadlineDate,
-      title: 'Cutoff reimbursement reminder',
+      title: 'Reimbursement reminder',
       notificationMessage,
       badge: 'Due tomorrow',
     });
@@ -437,7 +444,14 @@ function DeadlineNotificationIcon({ state }) {
 }
 
 function ReimbursementDeadlineAlert({ user }) {
-  const deadlineInfo = useMemo(() => calculateReimbursementDeadline(new Date()), []);
+  const loginReminder = getReimbursementLoginData(user);
+  const deadlineInfo = useMemo(() => {
+    if (loginReminder && typeof loginReminder === 'object' && loginReminder.showNotification !== false) {
+      return loginReminder;
+    }
+
+    return calculateReimbursementDeadline(new Date());
+  }, [loginReminder]);
   const storageKey = useMemo(() => {
     if (!deadlineInfo) {
       return '';
