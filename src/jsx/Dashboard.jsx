@@ -5,6 +5,9 @@ import ExpenseEntryView from './Dailyexpense.jsx';
 
 const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}';
 const DAILY_EXPENSE_MANAGER_DESCRIPTION = '{F9108E90-4118-49F1-96C5-640D98B3EED8}';
+const REIMBURSEMENT_DEADLINE_DAYS = [6, 21];
+const REIMBURSEMENT_REMINDER_DAYS = [5, 20];
+const REIMBURSEMENT_NOTIFICATION_CUTOFF_HOUR = 14;
 
 const sidebarSections = [
   {
@@ -251,6 +254,273 @@ function getUserDisplayName(user) {
 
 function getUserProfile(user) {
   return user?.profile || user?.Profile || 'ETRIS-DEMO';
+}
+
+function getUserDeadlineKey(user) {
+  const rawIdentifier =
+    user?.employeeNo
+    || user?.employeeNumber
+    || user?.EmployeeNo
+    || user?.userId
+    || user?.id
+    || user?.username
+    || 'guest';
+
+  return String(rawIdentifier).trim().replace(/\s+/g, '-').toLowerCase();
+}
+
+function getLocalDateId(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatDeadlineDate(date) {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatReminderShortDate(date) {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function createLocalDate(year, monthIndex, day) {
+  return new Date(year, monthIndex, day);
+}
+
+function createReimbursementAlertInfo({
+  state,
+  tone,
+  deadlineDay,
+  deadlineDate,
+  title,
+  notificationMessage,
+  badge,
+}) {
+  return {
+    state,
+    tone,
+    deadlineDay,
+    deadlineDate,
+    title,
+    notificationMessage,
+    emailBody: notificationMessage,
+    message: notificationMessage,
+    badge,
+  };
+}
+
+function calculateReimbursementDeadline(today = new Date()) {
+  const currentDate = createLocalDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const currentDay = currentDate.getDate();
+  const isAfterNotificationCutoff = today.getHours() >= REIMBURSEMENT_NOTIFICATION_CUTOFF_HOUR;
+
+  if (isAfterNotificationCutoff) {
+    return null;
+  }
+
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+  const isDeadlineToday = REIMBURSEMENT_DEADLINE_DAYS.includes(currentDay);
+  const isReminderDay = REIMBURSEMENT_REMINDER_DAYS.includes(currentDay);
+
+  if (!isDeadlineToday && !isReminderDay) {
+    return null;
+  }
+
+  const upcomingDeadlineDay = REIMBURSEMENT_DEADLINE_DAYS.find((deadlineDay) => currentDay <= deadlineDay);
+  const deadlineDate = upcomingDeadlineDay
+    ? createLocalDate(currentYear, currentMonth, upcomingDeadlineDay)
+    : createLocalDate(currentYear, currentMonth + 1, REIMBURSEMENT_DEADLINE_DAYS[0]);
+  const deadlineDay = deadlineDate.getDate();
+
+  if (isDeadlineToday) {
+    const notificationMessage = `Urgent: Reimbursement submission deadline is today (${formatReminderShortDate(currentDate)}).`;
+
+    return createReimbursementAlertInfo({
+      state: 'deadline',
+      tone: 'red',
+      deadlineDay: currentDay,
+      deadlineDate: currentDate,
+      title: 'Reimbursement deadline today',
+      notificationMessage,
+      badge: 'Deadline today',
+    });
+  }
+
+  if (isReminderDay) {
+    const notificationMessage = `Reminder: Reimbursement submission deadline is tomorrow (${formatReminderShortDate(deadlineDate)}).`;
+
+    return createReimbursementAlertInfo({
+      state: 'reminder',
+      tone: 'yellow',
+      deadlineDay,
+      deadlineDate,
+      title: 'Reimbursement reminder',
+      notificationMessage,
+      badge: 'Due tomorrow',
+    });
+  }
+
+  return null;
+}
+
+function getReimbursementLoginData(user) {
+  return user?.reimbursementNotification
+    ?? user?.ReimbursementNotification
+    ?? user?.reimbursementDeadline
+    ?? user?.ReimbursementDeadline
+    ?? user?.reimbursementStatus
+    ?? user?.ReimbursementStatus
+    ?? null;
+}
+
+function getBooleanField(source, fieldNames) {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  for (const fieldName of fieldNames) {
+    if (source[fieldName] === true || source[fieldName] === 'true' || source[fieldName] === 1 || source[fieldName] === '1') {
+      return true;
+    }
+
+    if (source[fieldName] === false || source[fieldName] === 'false' || source[fieldName] === 0 || source[fieldName] === '0') {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+function isReimbursementSubmittedFromLogin(user) {
+  const reimbursementData = getReimbursementLoginData(user);
+  const source = reimbursementData && typeof reimbursementData === 'object' ? reimbursementData : user;
+
+  return getBooleanField(source, [
+    'submitted',
+    'Submitted',
+    'isSubmitted',
+    'IsSubmitted',
+    'isReimbursementSubmitted',
+    'IsReimbursementSubmitted',
+    'reimbursementSubmitted',
+    'ReimbursementSubmitted',
+    'hasSubmittedReimbursement',
+    'HasSubmittedReimbursement',
+  ]);
+}
+
+function DeadlineNotificationIcon({ state }) {
+  if (state === 'submitted') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9.2 16.6 4.9 12.3l1.4-1.4 2.9 2.9 8.5-8.5 1.4 1.4-9.9 9.9Z" />
+      </svg>
+    );
+  }
+
+  if (state === 'deadline') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 22 20H2L12 2Zm0 4.2L5.4 18h13.2L12 6.2ZM11 10h2v4h-2v-4Zm0 5h2v2h-2v-2Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 22a2.6 2.6 0 0 0 2.45-1.75h-4.9A2.6 2.6 0 0 0 12 22Zm7-5V11a7 7 0 0 0-5-6.7V3a2 2 0 1 0-4 0v1.3A7 7 0 0 0 5 11v6l-2 2v1h18v-1l-2-2Zm-2 1H7v-7a5 5 0 0 1 10 0v7Z" />
+    </svg>
+  );
+}
+
+function ReimbursementDeadlineAlert({ user }) {
+  const loginReminder = getReimbursementLoginData(user);
+  const deadlineInfo = useMemo(() => {
+    if (loginReminder && typeof loginReminder === 'object' && loginReminder.showNotification !== false) {
+      return loginReminder;
+    }
+
+    return calculateReimbursementDeadline(new Date());
+  }, [loginReminder]);
+  const storageKey = useMemo(() => {
+    if (!deadlineInfo) {
+      return '';
+    }
+
+    const userKey = getUserDeadlineKey(user);
+    const deadlineId = getLocalDateId(deadlineInfo.deadlineDate);
+
+    return `etr-reimbursement-submitted:${userKey}:${deadlineId}`;
+  }, [deadlineInfo, user]);
+  const [isSubmitted, setIsSubmitted] = useState(() => window.localStorage.getItem(storageKey) === 'true');
+  const [isDismissed, setIsDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!storageKey) {
+      return;
+    }
+
+    setIsSubmitted(window.localStorage.getItem(storageKey) === 'true');
+    setIsDismissed(false);
+  }, [storageKey]);
+
+  const handleDismiss = () => {
+    setIsDismissed(true);
+  };
+
+  if (!deadlineInfo) {
+    return null;
+  }
+
+  const loginSubmittedStatus = isReimbursementSubmittedFromLogin(user);
+  const hasSubmitted = loginSubmittedStatus ?? isSubmitted;
+  const alertInfo = hasSubmitted
+    ? {
+      ...deadlineInfo,
+      state: 'submitted',
+      tone: 'green',
+      title: 'Reimbursement already submitted',
+      notificationMessage: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
+      emailBody: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
+      message: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
+      badge: 'Submitted',
+    }
+    : deadlineInfo;
+
+  if (!alertInfo || isDismissed) {
+    return null;
+  }
+
+  return (
+    <div className="etr-reimbursement-alert-wrap">
+      <section className={`etr-reimbursement-alert etr-tone-${alertInfo.tone}`} role="status" aria-live="polite">
+        <div className="etr-reimbursement-alert-icon">
+          <DeadlineNotificationIcon state={alertInfo.state} />
+        </div>
+
+        <div className="etr-reimbursement-alert-copy">
+          <strong>{alertInfo.title}</strong>
+          <p>{alertInfo.notificationMessage}</p>
+        </div>
+
+        <button type="button" className="etr-reimbursement-close-button" onClick={handleDismiss} aria-label="Dismiss reimbursement notification">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6.4 5 12.6 12.6-1.4 1.4L5 6.4 6.4 5Zm11.2 0L19 6.4 6.4 19 5 17.6 17.6 5Z" />
+          </svg>
+        </button>
+      </section>
+    </div>
+  );
 }
 
 function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onOpenExpense, onBackToManager }) {
@@ -578,7 +848,7 @@ function DashboardPage({ user, onLogout }) {
           <span />
         </button>
 
-        <div className="etr-dashboard-brand">ETRIS INTEGRATED SYSTEM</div>
+        <div className="etr-dashboard-brand">ETR INTEGRATED SYSTEM</div>
 
         <div className="etr-dashboard-search" role="search">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -654,6 +924,8 @@ function DashboardPage({ user, onLogout }) {
           ) : null}
         </div>
       </header>
+
+      <ReimbursementDeadlineAlert user={user} />
 
       <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 9px 1fr` }}>
         <button
