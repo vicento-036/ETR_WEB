@@ -61,6 +61,11 @@
   cursor: pointer;
 }
 
+.etr-expense-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .etr-expense-actions .etr-expense-save-button {
   border-color: #165ea4;
   background: linear-gradient(180deg, #0f4f8e 0%, #0c4278 100%);
@@ -335,6 +340,365 @@
   opacity: 0.45;
 }
 
+.etr-report-workspace {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  background: #ffffff;
+  min-height: 100%;
+  padding: 8px 16px 16px;
+}
+
+.etr-report-screen-toolbar.etr-expense-toolbar {
+  align-items: flex-start;
+  padding: 12px 18px;
+}
+
+.etr-report-screen-toolbar.etr-expense-toolbar .etr-expense-actions {
+  align-self: flex-start;
+}
+
+.etr-report-control-panel {
+  border: 1px solid #d8dee5;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 16px 42px rgba(15, 35, 58, 0.08);
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px 18px;
+}
+
+.etr-report-control-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e2e7ed;
+  padding-bottom: 14px;
+}
+
+.etr-report-control-head p {
+  margin: 0 0 5px;
+  color: #667789;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.etr-report-control-head h2 {
+  margin: 0;
+  color: #14283b;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.etr-report-control-head > span {
+  flex: 0 0 auto;
+  border: 1px solid #ced7e0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #354b62;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 7px 11px;
+}
+
+.etr-report-builder-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.etr-report-control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.etr-report-control-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.etr-report-control-grid label.is-wide {
+  grid-column: span 3;
+}
+
+.etr-report-control-grid span {
+  color: #415f7b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.etr-report-control-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #cfd8e2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #16293b;
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+  padding: 0 12px;
+}
+
+.etr-report-control-grid input:focus {
+  border-color: #475f77;
+  box-shadow: 0 0 0 3px rgba(71, 95, 119, 0.14);
+}
+
+.etr-report-filter-card {
+  border: 1px solid #cfd8e2;
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+}
+
+.etr-report-filter-card span {
+  color: #667789;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.etr-report-filter-card strong {
+  color: #14283b;
+  font-size: 1.12rem;
+}
+
+.etr-report-filter-card p {
+  margin: 0 0 8px;
+  color: #536678;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.etr-report-generate-button {
+  justify-self: stretch;
+  min-height: 42px;
+  border: 1px solid #22384d;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #243f59 0%, #172d43 100%);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 0 14px;
+}
+
+.etr-report-generate-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.etr-report-print-only {
+  display: none;
+}
+
+.etr-report-paper {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 1020px);
+  margin: 0 auto;
+  border: 1px solid #c4ccd4;
+  background: #ffffff;
+  box-shadow: 0 26px 70px rgba(12, 26, 42, 0.14);
+  color: #17283a;
+  overflow: hidden;
+  padding: 26px;
+}
+
+.etr-report-company-bar {
+  border-top: 8px solid #4c5965;
+  background: #ffffff;
+  color: #1f2f3f;
+  font-size: 0.84rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  padding: 7px 10px;
+  text-align: center;
+}
+
+.etr-report-title-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 18px;
+  border-right: 1px solid #8d98a3;
+  border-left: 1px solid #8d98a3;
+  border-bottom: 1px solid #8d98a3;
+  padding: 16px 18px;
+}
+
+.etr-report-title-row h2 {
+  margin: 0;
+  color: #111f2c;
+  font-size: 1.55rem;
+  letter-spacing: 0.09em;
+}
+
+.etr-report-title-row p {
+  margin: 4px 0 0;
+  color: #52616f;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.etr-report-number {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 170px;
+  border-left: 1px solid #ccd3da;
+  padding-left: 18px;
+  text-align: right;
+}
+
+.etr-report-number span,
+.etr-report-info-grid span,
+.etr-report-signatures span {
+  color: #4d5c68;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.etr-report-number strong {
+  color: #13283b;
+  font-size: 0.98rem;
+}
+
+.etr-report-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 2.2fr 1fr;
+  border-left: 1px solid #8d98a3;
+  border-top: 1px solid #8d98a3;
+  margin-top: 18px;
+}
+
+.etr-report-info-grid > div {
+  min-height: 60px;
+  border-right: 1px solid #8d98a3;
+  border-bottom: 1px solid #8d98a3;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 9px 11px;
+}
+
+.etr-report-info-grid .is-purpose {
+  grid-column: span 3;
+}
+
+.etr-report-info-grid strong {
+  color: #17283a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  min-height: 20px;
+}
+
+.etr-report-table-wrap {
+  overflow-x: auto;
+  margin-top: 20px;
+}
+
+.etr-report-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  color: #17283a;
+  font-size: 0.88rem;
+}
+
+.etr-report-table th,
+.etr-report-table td {
+  border: 1px solid #848f9a;
+  padding: 11px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.etr-report-table th {
+  background: #ffffff;
+  color: #1f2f3f;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.etr-report-table tbody td {
+  height: 42px;
+}
+
+.etr-report-table .is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.etr-report-empty {
+  color: #637384;
+  font-weight: 700;
+  height: 72px;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+.etr-report-total-row td {
+  background: #ffffff;
+  color: #111f2c;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.etr-report-signatures {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  border-left: 1px solid #848f9a;
+  border-top: 1px solid #848f9a;
+  margin-top: 30px;
+}
+
+.etr-report-signatures > div {
+  min-height: 98px;
+  border-right: 1px solid #848f9a;
+  border-bottom: 1px solid #848f9a;
+  display: grid;
+  align-content: space-between;
+  gap: 22px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.etr-report-signatures strong {
+  color: #17283a;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.etr-report-signatures span {
+  border-bottom: 1px solid #6c7884;
+  display: block;
+  margin: 0 -12px;
+  padding: 0 12px 9px;
+}
+
 @media (max-width: 900px) {
   .etr-expense-toolbar,
   .etr-expense-table-head {
@@ -348,6 +712,33 @@
 
   .etr-expense-manager-search {
     width: 100%;
+  }
+
+  .etr-report-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .etr-report-control-head,
+  .etr-report-builder-layout {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .etr-report-control-grid label.is-wide {
+    grid-column: span 2;
+  }
+
+  .etr-report-paper {
+    padding: 18px;
+  }
+
+  .etr-report-info-grid,
+  .etr-report-signatures {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .etr-report-info-grid .is-purpose {
+    grid-column: span 2;
   }
 }
 
@@ -403,5 +794,126 @@
     max-width: 100%;
     overflow-x: auto;
     padding-bottom: 2px;
+  }
+
+  .etr-report-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .etr-report-control-grid label.is-wide,
+  .etr-report-info-grid .is-purpose {
+    grid-column: span 1;
+  }
+
+  .etr-report-title-row {
+    flex-direction: column;
+  }
+
+  .etr-report-number {
+    border-left: 0;
+    padding-left: 0;
+    text-align: left;
+  }
+
+  .etr-report-info-grid,
+  .etr-report-signatures {
+    grid-template-columns: 1fr;
+  }
+
+  .etr-report-paper {
+    padding: 12px;
+  }
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    width: 210mm;
+    min-height: 297mm;
+    background: #ffffff;
+    overflow: visible !important;
+  }
+
+  .etr-dashboard-topbar,
+  .etr-dashboard-sidebar,
+  .etr-dashboard-resizer,
+  .etr-dashboard-sidebar-scrim,
+  .etr-reimbursement-alert-wrap,
+  .etr-report-screen-toolbar {
+    display: none !important;
+  }
+
+  .etr-dashboard-page,
+  .etr-dashboard-shell,
+  .etr-dashboard-main,
+  .etr-dashboard-canvas,
+  .etr-dashboard-content,
+  .etr-report-workspace {
+    display: block !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .etr-report-print-only {
+    display: block !important;
+  }
+
+  .etr-report-paper {
+    position: relative;
+    isolation: isolate;
+    width: 188mm;
+    max-width: none;
+    border: 1px solid #c4ccd4;
+    box-shadow: none;
+    color: #17283a;
+    overflow: hidden;
+    margin: 8mm auto;
+    padding: 8mm;
+  }
+
+  .etr-report-table-wrap {
+    overflow: visible;
+  }
+
+  .etr-report-table {
+    min-width: 0;
+  }
+
+  .etr-report-title-row {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .etr-report-number {
+    border-left: 1px solid #ccd3da;
+    padding-left: 18px;
+    text-align: right;
+  }
+
+  .etr-report-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 2.2fr 1fr;
+  }
+
+  .etr-report-info-grid .is-purpose {
+    grid-column: span 3;
+  }
+
+  .etr-report-signatures {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+  }
+
+  @page {
+    margin: 0;
+    size: A4 portrait;
   }
 }

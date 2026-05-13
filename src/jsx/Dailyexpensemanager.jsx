@@ -5,8 +5,11 @@ import '../css/Dailyexpensemanager.css';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const COST_UNITS_ENDPOINT = '/api/costunits';
+const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 8;
+const REPORT_VERIFIED_BY = 'ANGEL RASONABE';
+const REPORT_APPROVED_BY = 'VILMA C';
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -79,6 +82,94 @@ function formatMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   });
+}
+
+function parseMoney(value) {
+  return Number(String(value || 0).replace(/,/g, '')) || 0;
+}
+
+function getTodayInputDate() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function getUserField(user, fieldNames) {
+  if (!user) {
+    return '';
+  }
+
+  for (const fieldName of fieldNames) {
+    const value = user[fieldName];
+
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  return '';
+}
+
+function getReportEmployeeNo(user, rows) {
+  return getUserField(user, [
+    'employeeNo',
+    'employeeCode',
+    'employeeNumber',
+    'empNo',
+    'employeeId',
+    'employeeID',
+    'EmployeeNo',
+    'EmployeeCode',
+    'EmployeeNumber',
+    'EmployeeId',
+    'EmployeeID',
+  ]) || rows.find((row) => row.employeeCode)?.employeeCode || '';
+}
+
+function getReportEmployeeName(user, rows) {
+  const fullName = getUserField(user, ['employeeName', 'fullName', 'name', 'displayName', 'EmployeeName', 'FullName', 'Name']);
+
+  if (fullName) {
+    return fullName;
+  }
+
+  const lastName = getUserField(user, ['lastName', 'lastname', 'LastName', 'LASTNAME']);
+  const firstName = getUserField(user, ['firstName', 'firstname', 'FirstName', 'FIRSTNAME']);
+
+  if (lastName && firstName) {
+    return `${lastName}, ${firstName}`;
+  }
+
+  return rows.find((row) => row.employeeName)?.employeeName || firstName || lastName || '';
+}
+
+function normalizeReportEmployee(row) {
+  if (!row) {
+    return null;
+  }
+
+  const employeeNo = getReportEmployeeNo(row, []);
+  const employeeName = getReportEmployeeName(row, []);
+
+  if (!employeeNo && !employeeName) {
+    return null;
+  }
+
+  return {
+    employeeNo,
+    employeeName,
+  };
+}
+
+function getReportEmployeeFromApi(data) {
+  return normalizeReportEmployee(data)
+    || normalizeReportEmployee(data?.employee)
+    || normalizeReportEmployee(data?.Employee)
+    || normalizeReportEmployee(data?.data)
+    || normalizeReportEmployee(data?.result);
 }
 
 function getSortValue(row, column) {
@@ -244,13 +335,251 @@ const columns = [
   { key: 'attachment', label: 'Attachment' },
 ];
 
-export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
+function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack }) {
+  const [employeeNo, setEmployeeNo] = useState(() => getReportEmployeeNo(user, rows));
+  const [employeeName, setEmployeeName] = useState(() => getReportEmployeeName(user, rows));
+  const [employeeLoadError, setEmployeeLoadError] = useState('');
+  const [hasCurrentEmployee, setHasCurrentEmployee] = useState(false);
+  const [reportDate, setReportDate] = useState(getTodayInputDate);
+  const [purpose, setPurpose] = useState('Reimbursement');
+  const [dateFrom, setDateFrom] = useState('2026-05-05');
+  const [dateTo, setDateTo] = useState('2026-05-09');
+  const reportNo = 'ER-2026-0001';
+  const approvedRows = useMemo(() => rows.filter((row) => normalizeExpenseStatusValue(row.statusValue ?? row.status) === 1), [rows]);
+  const filteredReportRows = useMemo(() => {
+    return approvedRows.filter((row) => {
+      const rowDate = row.dateInput || formatDateForInput(row.date);
+
+      if (!rowDate) {
+        return false;
+      }
+
+      if (dateFrom && rowDate < dateFrom) {
+        return false;
+      }
+
+      if (dateTo && rowDate > dateTo) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [approvedRows, dateFrom, dateTo]);
+  const grandTotal = filteredReportRows.reduce((sum, row) => sum + parseMoney(row.totalValue ?? row.total), 0);
+  const dateRangeLabel = `${dateFrom ? formatDate(dateFrom) : 'Start'} - ${dateTo ? formatDate(dateTo) : 'End'}`;
+
+  useEffect(() => {
+    if (hasCurrentEmployee) {
+      return;
+    }
+
+    setEmployeeNo(getReportEmployeeNo(user, rows));
+    setEmployeeName(getReportEmployeeName(user, rows));
+  }, [hasCurrentEmployee, rows, user]);
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadCurrentEmployee = async () => {
+      setEmployeeLoadError('');
+
+      try {
+        const response = await fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Unable to load current employee information.');
+        }
+
+        const employee = getReportEmployeeFromApi(data);
+
+        if (employee) {
+          setEmployeeNo(employee.employeeNo);
+          setEmployeeName(employee.employeeName);
+          setHasCurrentEmployee(true);
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setEmployeeLoadError(error.message || 'Unable to load current employee information.');
+        }
+      }
+    };
+
+    loadCurrentEmployee();
+
+    return () => controller.abort();
+  }, []);
+
+  const handleGenerateReport = () => {
+    if (isLoading || loadError) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      window.print();
+    }, 50);
+  };
+
+  return (
+    <div className="etr-report-workspace">
+      <div className="etr-expense-toolbar etr-report-screen-toolbar">
+        <div>
+          <p className="etr-expense-kicker">Finance</p>
+          <h1>Generate Expense Report</h1>
+          <span>Set the report details, then generate the printable form directly.</span>
+        </div>
+
+        <div className="etr-expense-actions">
+          <button type="button" onClick={onBack}>Back</button>
+        </div>
+      </div>
+
+      <section className="etr-report-control-panel etr-report-screen-toolbar">
+        <div className="etr-report-control-head">
+          <div>
+            <p>Report Builder</p>
+            <h2>Approved expense reimbursement form</h2>
+          </div>
+          <span>{isLoading ? 'Loading expenses from API' : 'Generate opens print dialog'}</span>
+        </div>
+
+        {loadError ? <div className="etr-expense-save-message is-error">{loadError}</div> : null}
+        {employeeLoadError ? <div className="etr-expense-save-message is-error">{employeeLoadError}</div> : null}
+
+        <div className="etr-report-builder-layout">
+          <div className="etr-report-control-grid">
+            <label>
+              <span>Employee No</span>
+              <input value={employeeNo} onChange={(event) => setEmployeeNo(event.target.value)} />
+            </label>
+            <label>
+              <span>Employee Name</span>
+              <input value={employeeName} onChange={(event) => setEmployeeName(event.target.value)} />
+            </label>
+            <label>
+              <span>Date</span>
+              <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
+            </label>
+            <label className="is-wide">
+              <span>Purpose</span>
+              <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
+            </label>
+            <label>
+              <span>Date From</span>
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            </label>
+            <label>
+              <span>Date To</span>
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            </label>
+          </div>
+
+          <aside className="etr-report-filter-card">
+            <span>Generate No</span>
+            <strong>{reportNo}</strong>
+            <p>{dateRangeLabel}</p>
+            <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || !!loadError}>
+              {isLoading ? 'Loading Expenses...' : 'Generate Expense Report'}
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      <section className="etr-report-print-only" aria-hidden="true">
+        <section className="etr-report-paper" aria-label="Final expense report">
+        <div className="etr-report-company-bar">Masigasig Distribution and Logistics Inc.</div>
+        <div className="etr-report-title-row">
+          <div>
+            <h2>FINAL REPORT</h2>
+          </div>
+          <div className="etr-report-number">
+            <span>Generate No:</span>
+            <strong>{reportNo}</strong>
+          </div>
+        </div>
+
+        <div className="etr-report-info-grid">
+          <div>
+            <span>Employee No.</span>
+            <strong>{employeeNo}</strong>
+          </div>
+          <div>
+            <span>Name of Employee</span>
+            <strong>{employeeName}</strong>
+          </div>
+          <div>
+            <span>Date</span>
+            <strong>{formatDate(reportDate)}</strong>
+          </div>
+          <div className="is-purpose">
+            <span>Purpose</span>
+            <strong>{purpose}</strong>
+          </div>
+        </div>
+
+        <div className="etr-report-table-wrap">
+          <table className="etr-report-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Reference No</th>
+                <th>Particulars / Description</th>
+                <th>Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredReportRows.length > 0 ? filteredReportRows.map((row) => (
+                <tr key={row.expenseId || row.referenceNo || `${row.dateInput}-${row.total}`}>
+                  <td>{row.date || formatDate(row.dateInput)}</td>
+                  <td>{row.referenceNo}</td>
+                  <td>{row.description || row.expenseType}</td>
+                  <td className="is-number">{formatMoney(row.totalValue ?? row.total)}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="4" className="etr-report-empty">No approved transactions found.</td>
+                </tr>
+              )}
+              <tr className="etr-report-total-row">
+                <td colSpan="3">TOTAL</td>
+                <td className="is-number">{formatMoney(grandTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="etr-report-signatures">
+          <div>
+            <span>Submitted By</span>
+            <strong>{employeeName}</strong>
+          </div>
+          <div>
+            <span>Verified By</span>
+            <strong>{REPORT_VERIFIED_BY}</strong>
+          </div>
+          <div>
+            <span>Approved By</span>
+            <strong>{REPORT_APPROVED_BY}</strong>
+          </div>
+        </div>
+      </section>
+      </section>
+    </div>
+  );
+}
+
+export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense }) {
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -369,6 +698,18 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
     }));
   };
 
+  if (isReportOpen) {
+    return (
+      <ExpenseReportView
+        rows={rows}
+        user={user}
+        isLoading={isLoading}
+        loadError={loadError}
+        onBack={() => setIsReportOpen(false)}
+      />
+    );
+  }
+
   return (
     <div className="etr-expense-entry">
       <div className="etr-expense-toolbar">
@@ -379,6 +720,7 @@ export default function DailyExpenseManager({ onNewEntry, onOpenExpense }) {
         </div>
 
         <div className="etr-expense-actions">
+          <button type="button" onClick={() => setIsReportOpen(true)}>Generate Expense Report</button>
           <button type="button" className="etr-expense-save-button" onClick={onNewEntry}>New Entry</button>
         </div>
       </div>
