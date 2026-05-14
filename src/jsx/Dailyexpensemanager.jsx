@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getToken } from '../services/authStorage';
 import '../css/Dailyexpensemanager.css';
 
@@ -9,10 +9,12 @@ const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 8;
-const REPORT_PRINT_ROWS_PER_PAGE = 12;
-const REPORT_PRINT_MIN_LAST_PAGE_ROWS = 4;
+const REPORT_PRINT_ROWS_PER_PAGE = 15;
+const REPORT_PRINT_LAST_PAGE_ROWS = 11;
 const REPORT_VERIFIED_BY = 'ANGEL RASONABE';
 const REPORT_APPROVED_BY = 'VILMA C';
+const PDF_PAGE_WIDTH = 595.28;
+const PDF_PAGE_HEIGHT = 841.89;
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -272,21 +274,244 @@ function chunkRowsForPrint(rows) {
     return [[]];
   }
 
-  const pages = Array.from({ length: Math.ceil(rows.length / REPORT_PRINT_ROWS_PER_PAGE) }, (_, index) => {
-    const start = index * REPORT_PRINT_ROWS_PER_PAGE;
-    return rows.slice(start, start + REPORT_PRINT_ROWS_PER_PAGE);
-  });
+  const pages = [];
+  let rowIndex = 0;
 
-  const lastPage = pages[pages.length - 1];
-  const previousPage = pages[pages.length - 2];
+  while (rowIndex < rows.length) {
+    const rowsLeft = rows.length - rowIndex;
+    const rowsForPage = rowsLeft <= REPORT_PRINT_LAST_PAGE_ROWS
+      ? REPORT_PRINT_LAST_PAGE_ROWS
+      : REPORT_PRINT_ROWS_PER_PAGE;
 
-  if (pages.length > 1 && lastPage.length < REPORT_PRINT_MIN_LAST_PAGE_ROWS && previousPage.length > REPORT_PRINT_MIN_LAST_PAGE_ROWS) {
-    const rowsToMove = Math.min(REPORT_PRINT_MIN_LAST_PAGE_ROWS - lastPage.length, previousPage.length - REPORT_PRINT_MIN_LAST_PAGE_ROWS);
-    const movedRows = previousPage.splice(previousPage.length - rowsToMove, rowsToMove);
-    lastPage.unshift(...movedRows);
+    pages.push(rows.slice(rowIndex, rowIndex + rowsForPage));
+    rowIndex += rowsForPage;
   }
 
   return pages;
+}
+
+function escapePdfText(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[^\x20-\x7E]/g, '');
+}
+
+function pdfText(page, text, x, y, size = 8, options = {}) {
+  const safeText = escapePdfText(text);
+  const align = options.align || 'left';
+  const width = options.width || 0;
+  const estimatedWidth = safeText.length * size * 0.5;
+  const textX = align === 'right' ? x + width - estimatedWidth : align === 'center' ? x + ((width - estimatedWidth) / 2) : x;
+  const font = options.font || 'F1';
+  const gray = options.gray ?? 0;
+
+  page.push(`q ${gray} g BT /${font} ${size} Tf ${textX.toFixed(2)} ${y.toFixed(2)} Td (${safeText}) Tj ET Q`);
+}
+
+function pdfLine(page, x1, y1, x2, y2, width = 0.6) {
+  page.push(`q 0.62 G ${width} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S Q`);
+}
+
+function pdfRect(page, x, y, width, height) {
+  page.push(`q 0.62 G 0.45 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S Q`);
+}
+
+function pdfFillRect(page, x, y, width, height, gray = 0.96) {
+  page.push(`q ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f Q`);
+}
+
+function drawPdfCell(page, text, x, top, width, height, options = {}) {
+  if (options.fill !== undefined) {
+    pdfFillRect(page, x, top - height, width, height, options.fill);
+  }
+
+  pdfRect(page, x, top - height, width, height);
+  pdfText(page, text, x + (options.paddingX || 6), top - (options.offsetY || 13), options.size || 7, {
+    align: options.align,
+    font: options.font,
+    gray: options.gray,
+    width: width - 10,
+  });
+}
+
+function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, reportDate, dateFrom, dateTo, grandTotal }) {
+  const pageStreams = pages.map((pageRows, pageIndex) => {
+    const isLastPage = pageIndex === pages.length - 1;
+    const stream = ['0.45 w', '0.45 G', '0 g'];
+    const margin = 30;
+    const usableWidth = PDF_PAGE_WIDTH - (margin * 2);
+    const panelX = margin;
+    const panelWidth = usableWidth;
+    let top = PDF_PAGE_HEIGHT - 38;
+
+    pdfText(stream, 'MASIGASIG DISTRIBUTION AND LOGISTICS INC.', panelX, top, 8, {
+      align: 'center',
+      width: panelWidth,
+      font: 'F2',
+      gray: 0.12,
+    });
+    top -= 16;
+    pdfLine(stream, panelX, top, panelX + panelWidth, top, 0.9);
+    top -= 14;
+
+    const headerHeight = 58;
+    pdfFillRect(stream, panelX, top - headerHeight, panelWidth, headerHeight, 0.985);
+    pdfRect(stream, panelX, top - headerHeight, panelWidth, headerHeight);
+    pdfText(stream, 'REIMBURSEMENT OF EXPENSES', panelX + 12, top - 25, 13, { font: 'F2', gray: 0.05 });
+    pdfLine(stream, panelX + panelWidth - 140, top - 10, panelX + panelWidth - 140, top - 48, 0.45);
+    pdfText(stream, 'GENERATE NO.', panelX + panelWidth - 128, top - 23, 5.5, { font: 'F2', gray: 0.24 });
+    pdfText(stream, reportNo, panelX + panelWidth - 14, top - 38, 8, {
+      align: 'right',
+      width: 0,
+      font: 'F2',
+      gray: 0.05,
+    });
+    top -= headerHeight + 14;
+
+    const infoHeight = 42;
+    const employeeNoWidth = 128;
+    const dateWidth = 118;
+    const employeeNameWidth = panelWidth - employeeNoWidth - dateWidth;
+    drawPdfCell(stream, 'EMPLOYEE NO.', panelX, top, employeeNoWidth, infoHeight, { fill: 0.98, size: 5.5, font: 'F2', gray: 0.26 });
+    pdfText(stream, employeeNo, panelX + 8, top - 29, 7, { font: 'F2', gray: 0.04 });
+    drawPdfCell(stream, 'NAME OF EMPLOYEE', panelX + employeeNoWidth, top, employeeNameWidth, infoHeight, { fill: 0.98, size: 5.5, font: 'F2', gray: 0.26 });
+    pdfText(stream, formatPrintUppercase(employeeName), panelX + employeeNoWidth + 8, top - 29, 7, { font: 'F2', gray: 0.04 });
+    drawPdfCell(stream, 'DATE', panelX + employeeNoWidth + employeeNameWidth, top, dateWidth, infoHeight, { fill: 0.98, size: 5.5, font: 'F2', gray: 0.26 });
+    pdfText(stream, formatDate(reportDate), panelX + employeeNoWidth + employeeNameWidth + 8, top - 29, 7, { font: 'F2', gray: 0.04 });
+    top -= infoHeight;
+
+    const purposeHeight = 38;
+    drawPdfCell(stream, 'PURPOSE', panelX, top, panelWidth, purposeHeight, { fill: 0.99, size: 5.5, font: 'F2', gray: 0.26 });
+    pdfText(stream, `REIMBURSEMENT DATE FROM ${formatDate(dateFrom)} TO ${formatDate(dateTo)}`, panelX + 8, top - 26, 7, { font: 'F2', gray: 0.05 });
+    top -= purposeHeight + 16;
+
+    const tableDateWidth = 62;
+    const tableRefWidth = 92;
+    const tableAmountWidth = 96;
+    const tableDescWidth = panelWidth - tableDateWidth - tableRefWidth - tableAmountWidth;
+    const tableHeaderHeight = 28;
+    const rowHeight = 18;
+
+    drawPdfCell(stream, 'DATE', panelX, top, tableDateWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
+    drawPdfCell(stream, 'REFERENCE NO.', panelX + tableDateWidth, top, tableRefWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
+    drawPdfCell(stream, 'PARTICULARS / DESCRIPTION', panelX + tableDateWidth + tableRefWidth, top, tableDescWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
+    drawPdfCell(stream, 'TOTAL AMOUNT', panelX + tableDateWidth + tableRefWidth + tableDescWidth, top, tableAmountWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
+    top -= tableHeaderHeight;
+
+    if (pageRows.length > 0) {
+      pageRows.forEach((row, rowIndex) => {
+        const fill = rowIndex % 2 === 0 ? 1 : 0.992;
+        drawPdfCell(stream, getReportReceiptDate(row), panelX, top, tableDateWidth, rowHeight, { fill, size: 6.2, gray: 0.16, offsetY: 12 });
+        drawPdfCell(stream, row.referenceNo, panelX + tableDateWidth, top, tableRefWidth, rowHeight, { fill, size: 6.2, gray: 0.16, offsetY: 12 });
+        drawPdfCell(stream, formatPrintUppercase(row.description || row.expenseType).slice(0, 76), panelX + tableDateWidth + tableRefWidth, top, tableDescWidth, rowHeight, { fill, size: 6.2, gray: 0.12, offsetY: 12 });
+        drawPdfCell(stream, formatMoney(row.totalValue ?? row.total), panelX + tableDateWidth + tableRefWidth + tableDescWidth, top, tableAmountWidth, rowHeight, {
+          align: 'right',
+          fill,
+          size: 6.2,
+          gray: 0.08,
+          offsetY: 12,
+        });
+        top -= rowHeight;
+      });
+    } else {
+      drawPdfCell(stream, 'NO TRANSACTIONS FOUND FOR THE SELECTED DATE RANGE.', panelX, top, panelWidth, rowHeight, {
+        align: 'center',
+        fill: 1,
+        size: 6.5,
+        font: 'F2',
+        gray: 0.26,
+        offsetY: 12,
+      });
+      top -= rowHeight;
+    }
+
+    if (isLastPage) {
+      const totalHeight = 34;
+      pdfFillRect(stream, panelX, top - totalHeight, panelWidth, totalHeight, 0.95);
+      pdfRect(stream, panelX, top - totalHeight, tableDateWidth + tableRefWidth + tableDescWidth, totalHeight);
+      pdfText(stream, 'TOTAL', panelX + 10, top - 21, 10, { font: 'F2', gray: 0.05 });
+      pdfRect(stream, panelX + tableDateWidth + tableRefWidth + tableDescWidth, top - totalHeight, tableAmountWidth, totalHeight);
+      pdfText(stream, formatMoney(grandTotal), panelX + tableDateWidth + tableRefWidth + tableDescWidth + 8, top - 22, 12, {
+        align: 'right',
+        width: tableAmountWidth - 16,
+        font: 'F2',
+        gray: 0.02,
+      });
+      top -= totalHeight + 18;
+    } else {
+      top -= 18;
+    }
+
+    const signatureHeight = 70;
+    const signatureHeaderHeight = 24;
+    const signatureWidth = panelWidth / 3;
+    ['SUBMITTED BY', 'VERIFIED BY', 'APPROVED BY'].forEach((label, index) => {
+      const x = panelX + (signatureWidth * index);
+      pdfFillRect(stream, x, top - signatureHeaderHeight, signatureWidth, signatureHeaderHeight, 0.965);
+      pdfRect(stream, x, top - signatureHeaderHeight, signatureWidth, signatureHeaderHeight);
+      pdfText(stream, label, x + 8, top - 15, 5.8, { align: 'center', width: signatureWidth - 16, font: 'F2', gray: 0.22 });
+      pdfRect(stream, x, top - signatureHeight, signatureWidth, signatureHeight - signatureHeaderHeight);
+      const name = index === 0 ? formatPrintUppercase(employeeName) : index === 1 ? REPORT_VERIFIED_BY : REPORT_APPROVED_BY;
+      pdfText(stream, name, x + 8, top - 52, 7, { align: 'center', width: signatureWidth - 16, font: 'F2', gray: 0.05 });
+    });
+
+    pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
+      align: 'right',
+      width: panelWidth,
+      font: 'F2',
+      gray: 0.45,
+    });
+
+    return stream.join('\n');
+  });
+
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>'];
+  const pageObjectIds = [];
+  const contentObjectIds = [];
+  const fontObjectId = 3 + (pageStreams.length * 2);
+  const boldFontObjectId = fontObjectId + 1;
+
+  pageStreams.forEach((stream, index) => {
+    const pageObjectId = 3 + (index * 2);
+    const contentObjectId = pageObjectId + 1;
+    pageObjectIds.push(pageObjectId);
+    contentObjectIds.push(contentObjectId);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontObjectId} 0 R /F2 ${boldFontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+
+  objects.splice(1, 0, `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageStreams.length} >>`);
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function normalizeCostUnit(row) {
@@ -450,7 +675,7 @@ const columns = [
   { key: 'attachment', label: 'Attachment' },
 ];
 
-function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack }) {
+function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack, onRefresh }) {
   const [employeeNo, setEmployeeNo] = useState(() => getReportEmployeeNo(user, rows));
   const [employeeName, setEmployeeName] = useState(() => getReportEmployeeName(user, rows));
   const [employeeLoadError, setEmployeeLoadError] = useState('');
@@ -574,9 +799,18 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       return;
     }
 
-    window.setTimeout(() => {
-      window.print();
-    }, 50);
+    const pdfBlob = buildExpenseReportPdfBlob({
+      pages: printReportPages,
+      reportNo: generatedNo,
+      employeeNo,
+      employeeName,
+      reportDate,
+      dateFrom,
+      dateTo,
+      grandTotal,
+    });
+
+    downloadBlob(pdfBlob, `${generatedNo || 'expense-report'}.pdf`);
   };
 
   return (
@@ -585,7 +819,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         <div>
           <p className="etr-expense-kicker">Finance</p>
           <h1>Generate Expense Report</h1>
-          <span>Set the report details, then generate the printable form directly.</span>
+          <span>Set the report details, then download the PDF form directly.</span>
         </div>
 
         <div className="etr-expense-actions">
@@ -598,8 +832,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
           <div>
             <p>Report Builder</p>
             <h2>Approved expense reimbursement form</h2>
-          </div>
-          <span>{isLoading ? 'Loading expenses from API' : 'Generate opens print dialog'}</span>
+          </div>   
         </div>
 
         {loadError ? <div className="etr-expense-save-message is-error">{loadError}</div> : null}
@@ -651,6 +884,12 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         </div>
 
         <section className="etr-report-preview-panel" aria-label="Reimbursement preview">
+          <div className="etr-report-preview-head">
+            <span>{isLoading ? 'Refreshing list...' : `${filteredReportRows.length} approved transaction${filteredReportRows.length === 1 ? '' : 's'}`}</span>
+            <button type="button" onClick={onRefresh} disabled={isLoading} aria-label="Refresh expense report list" title="Refresh expense report list">
+              &#8635;
+            </button>
+          </div>
           <div className="etr-report-preview-table-wrap">
             <table className="etr-report-preview-table">
               <thead>
@@ -686,14 +925,17 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
           return (
             <section className="etr-report-paper" aria-label="Final expense report" key={`print-page-${pageIndex}`}>
-              <div className="etr-report-company-bar">Masigasig Distribution and Logistics Inc.</div>
+              <div className="etr-report-company-bar">
+                <strong>Masigasig Distribution and Logistics Inc.</strong>
+                <span>Finance Department</span>
+              </div>
               <div className="etr-report-title-row">
                 <div>
                   <h2>REIMBURSEMENT OF EXPENSES</h2>
-                  <p>{printReportPages.length > 1 ? `Page ${pageIndex + 1} of ${printReportPages.length}` : 'Expense reimbursement report'}</p>
+                  
                 </div>
                 <div className="etr-report-number">
-                  <span>Generate No:</span>
+                  <span>Generate No.</span>
                   <strong>{reportNo}</strong>
                 </div>
               </div>
@@ -724,7 +966,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                       <th>Date</th>
                       <th>Reference No</th>
                       <th>Particulars / Description</th>
-                      <th>Total Amount</th>
+                      <th>Total </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -742,8 +984,8 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                     )}
                     {isLastPage ? (
                       <tr className="etr-report-total-row">
-                        <td colSpan="3">TOTAL</td>
-                        <td className="is-number">{formatMoney(grandTotal)}</td>
+                        <td colSpan="3">Total </td>
+                        <td className="is-number">PHP {formatMoney(grandTotal)}</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -754,14 +996,17 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                 <div className="etr-report-signatures">
                   <div>
                     <span>Submitted By</span>
+                    <i />
                     <strong>{formatPrintUppercase(employeeName)}</strong>
                   </div>
                   <div>
                     <span>Verified By</span>
+                    <i />
                     <strong>{REPORT_VERIFIED_BY}</strong>
                   </div>
                   <div>
                     <span>Approved By</span>
+                    <i />
                     <strong>{REPORT_APPROVED_BY}</strong>
                   </div>
                 </div>
@@ -783,62 +1028,62 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
   const [loadError, setLoadError] = useState('');
   const [isReportOpen, setIsReportOpen] = useState(false);
 
-  useEffect(() => {
+  const loadDailyExpenses = useCallback(async (signal) => {
     const token = getToken();
+    setIsLoading(true);
+    setLoadError('');
+
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [expenseResponse, costUnitResponse] = await Promise.all([
+        fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
+          headers,
+          signal,
+        }),
+        fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
+          headers,
+          signal,
+        }),
+      ]);
+
+      const expenseData = await expenseResponse.json().catch(() => ({}));
+      const costUnitData = await costUnitResponse.json().catch(() => ({}));
+
+      if (!expenseResponse.ok) {
+        throw new Error(expenseData?.message || 'Unable to load daily expense transactions.');
+      }
+
+      if (!costUnitResponse.ok) {
+        throw new Error(costUnitData?.message || 'Unable to load subsidiaries.');
+      }
+
+      const subsidiaryById = new Map(
+        getApiCollection(costUnitData)
+          .map(normalizeCostUnit)
+          .filter(Boolean)
+          .map((item) => [item.costUnitId, item.display])
+      );
+
+      setRows(getApiCollection(expenseData).map((row) => normalizeDailyExpense(row, subsidiaryById)));
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setRows([]);
+        setLoadError(error.message || 'Unable to load daily expense transactions.');
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
 
-    const loadDailyExpenses = async () => {
-      setIsLoading(true);
-      setLoadError('');
-
-      try {
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const [expenseResponse, costUnitResponse] = await Promise.all([
-          fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
-            headers,
-            signal: controller.signal,
-          }),
-          fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
-            headers,
-            signal: controller.signal,
-          }),
-        ]);
-
-        const expenseData = await expenseResponse.json().catch(() => ({}));
-        const costUnitData = await costUnitResponse.json().catch(() => ({}));
-
-        if (!expenseResponse.ok) {
-          throw new Error(expenseData?.message || 'Unable to load daily expense transactions.');
-        }
-
-        if (!costUnitResponse.ok) {
-          throw new Error(costUnitData?.message || 'Unable to load subsidiaries.');
-        }
-
-        const subsidiaryById = new Map(
-          getApiCollection(costUnitData)
-            .map(normalizeCostUnit)
-            .filter(Boolean)
-            .map((item) => [item.costUnitId, item.display])
-        );
-
-        setRows(getApiCollection(expenseData).map((row) => normalizeDailyExpense(row, subsidiaryById)));
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          setRows([]);
-          setLoadError(error.message || 'Unable to load daily expense transactions.');
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadDailyExpenses();
+    loadDailyExpenses(controller.signal);
 
     return () => controller.abort();
-  }, []);
+  }, [loadDailyExpenses]);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -908,6 +1153,7 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
         isLoading={isLoading}
         loadError={loadError}
         onBack={() => setIsReportOpen(false)}
+        onRefresh={() => loadDailyExpenses()}
       />
     );
   }
