@@ -395,7 +395,7 @@ function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, 
     const rowHeight = 18;
 
     drawPdfCell(stream, 'DATE', panelX, top, tableDateWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
-    drawPdfCell(stream, 'REFERENCE NO.', panelX + tableDateWidth, top, tableRefWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
+    drawPdfCell(stream, 'DOCUMENT NO.', panelX + tableDateWidth, top, tableRefWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
     drawPdfCell(stream, 'PARTICULARS / DESCRIPTION', panelX + tableDateWidth + tableRefWidth, top, tableDescWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
     drawPdfCell(stream, 'TOTAL AMOUNT', panelX + tableDateWidth + tableRefWidth + tableDescWidth, top, tableAmountWidth, tableHeaderHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.14, offsetY: 17 });
     top -= tableHeaderHeight;
@@ -404,7 +404,7 @@ function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, 
       pageRows.forEach((row, rowIndex) => {
         const fill = rowIndex % 2 === 0 ? 1 : 0.992;
         drawPdfCell(stream, getReportReceiptDate(row), panelX, top, tableDateWidth, rowHeight, { fill, size: 6.2, gray: 0.16, offsetY: 12 });
-        drawPdfCell(stream, row.referenceNo, panelX + tableDateWidth, top, tableRefWidth, rowHeight, { fill, size: 6.2, gray: 0.16, offsetY: 12 });
+        drawPdfCell(stream, row.documentNo, panelX + tableDateWidth, top, tableRefWidth, rowHeight, { fill, size: 6.2, gray: 0.16, offsetY: 12 });
         drawPdfCell(stream, formatPrintUppercase(row.description || row.expenseType).slice(0, 76), panelX + tableDateWidth + tableRefWidth, top, tableDescWidth, rowHeight, { fill, size: 6.2, gray: 0.12, offsetY: 12 });
         drawPdfCell(stream, formatMoney(row.totalValue ?? row.total), panelX + tableDateWidth + tableRefWidth + tableDescWidth, top, tableAmountWidth, rowHeight, {
           align: 'right',
@@ -680,7 +680,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const [employeeName, setEmployeeName] = useState(() => getReportEmployeeName(user, rows));
   const [employeeLoadError, setEmployeeLoadError] = useState('');
   const [hasCurrentEmployee, setHasCurrentEmployee] = useState(false);
-  const [reportDate, setReportDate] = useState(getTodayInputDate);
+  const reportDate = getTodayInputDate();
   const [purpose, setPurpose] = useState('Reimbursement');
   const [dateFrom, setDateFrom] = useState(getTodayInputDate);
   const [dateTo, setDateTo] = useState(getTodayInputDate);
@@ -851,7 +851,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
             </label>
             <label>
               <span>Date</span>
-              <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
+              <input type="date" value={reportDate} readOnly aria-readonly="true" />
             </label>
             <label className="is-wide">
               <span>Purpose</span>
@@ -895,7 +895,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Reference No</th>
+                  <th>Document No</th>
                   <th>Description</th>
                   <th className="is-number">Total</th>
                 </tr>
@@ -904,7 +904,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                 {filteredReportRows.length > 0 ? filteredReportRows.map((row) => (
                   <tr key={row.expenseId || row.referenceNo || `${row.receiptDateInput || row.dateInput}-${row.total}`}>
                     <td>{getReportReceiptDate(row)}</td>
-                    <td>{row.referenceNo}</td>
+                    <td>{row.documentNo}</td>
                     <td>{row.description || row.expenseType}</td>
                     <td className="is-number">PHP {formatMoney(row.totalValue ?? row.total)}</td>
                   </tr>
@@ -964,7 +964,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Reference No</th>
+                      <th>Document No</th>
                       <th>Particulars / Description</th>
                       <th>Total </th>
                     </tr>
@@ -973,7 +973,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                     {pageRows.length > 0 ? pageRows.map((row) => (
                       <tr key={row.expenseId || row.referenceNo || `${row.receiptDateInput || row.dateInput}-${row.total}`}>
                         <td>{getReportReceiptDate(row)}</td>
-                        <td>{row.referenceNo}</td>
+                        <td>{row.documentNo}</td>
                         <td>{formatPrintUppercase(row.description || row.expenseType)}</td>
                         <td className="is-number">{formatMoney(row.totalValue ?? row.total)}</td>
                       </tr>

@@ -477,6 +477,12 @@
   box-shadow: 0 0 0 3px rgba(71, 95, 119, 0.14);
 }
 
+.etr-report-control-grid input[readonly] {
+  background: #f4f7fa;
+  color: #354b62;
+  cursor: default;
+}
+
 .etr-report-filter-card {
   border: 1px solid #cfd8e2;
   border-radius: 8px;
