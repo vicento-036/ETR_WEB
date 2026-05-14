@@ -4,10 +4,13 @@ import '../css/Dailyexpensemanager.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
+const DAILY_EXPENSE_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/generated-no`;
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 8;
+const REPORT_PRINT_ROWS_PER_PAGE = 12;
+const REPORT_PRINT_MIN_LAST_PAGE_ROWS = 4;
 const REPORT_VERIFIED_BY = 'ANGEL RASONABE';
 const REPORT_APPROVED_BY = 'VILMA C';
 
@@ -38,6 +41,53 @@ function getApiCollection(data) {
   return [];
 }
 
+function getGeneratedNoFromApi(data) {
+  if (typeof data === 'string' || typeof data === 'number') {
+    return String(data).trim();
+  }
+
+  return getField(data, [
+    'generatedNo',
+    'generateNo',
+    'reportNo',
+    'referenceNo',
+    'no',
+    'value',
+    'GeneratedNo',
+    'GenerateNo',
+    'ReportNo',
+    'ReferenceNo',
+    'No',
+    'Value',
+  ]) || getField(data?.data, [
+    'generatedNo',
+    'generateNo',
+    'reportNo',
+    'referenceNo',
+    'no',
+    'value',
+    'GeneratedNo',
+    'GenerateNo',
+    'ReportNo',
+    'ReferenceNo',
+    'No',
+    'Value',
+  ]) || getField(data?.result, [
+    'generatedNo',
+    'generateNo',
+    'reportNo',
+    'referenceNo',
+    'no',
+    'value',
+    'GeneratedNo',
+    'GenerateNo',
+    'ReportNo',
+    'ReferenceNo',
+    'No',
+    'Value',
+  ]);
+}
+
 function formatDate(value) {
   if (!value) {
     return '';
@@ -61,11 +111,28 @@ function formatDateForInput(value) {
     return '';
   }
 
+  const valueText = String(value).trim();
+  const isoDateMatch = valueText.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (isoDateMatch) {
+    return `${isoDateMatch[1]}-${isoDateMatch[2]}-${isoDateMatch[3]}`;
+  }
+
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    const [month, day, year] = String(value).split('/');
-    return year && month && day ? `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}` : String(value);
+    const [month, day, year] = valueText.split('/');
+
+    if (year && month && day) {
+      const firstNumber = Number(month);
+      const secondNumber = Number(day);
+      const normalizedMonth = firstNumber > 12 && secondNumber <= 12 ? day : month;
+      const normalizedDay = firstNumber > 12 && secondNumber <= 12 ? month : day;
+
+      return `${year}-${normalizedMonth.padStart(2, '0')}-${normalizedDay.padStart(2, '0')}`;
+    }
+
+    return valueText;
   }
 
   const year = date.getFullYear();
@@ -86,6 +153,10 @@ function formatMoney(value) {
 
 function parseMoney(value) {
   return Number(String(value || 0).replace(/,/g, '')) || 0;
+}
+
+function formatPrintUppercase(value) {
+  return String(value || '').toUpperCase();
 }
 
 function getTodayInputDate() {
@@ -196,6 +267,28 @@ function getVisiblePages(currentPage, totalPages) {
   return Array.from({ length: visibleCount }, (_, index) => start + index);
 }
 
+function chunkRowsForPrint(rows) {
+  if (!rows.length) {
+    return [[]];
+  }
+
+  const pages = Array.from({ length: Math.ceil(rows.length / REPORT_PRINT_ROWS_PER_PAGE) }, (_, index) => {
+    const start = index * REPORT_PRINT_ROWS_PER_PAGE;
+    return rows.slice(start, start + REPORT_PRINT_ROWS_PER_PAGE);
+  });
+
+  const lastPage = pages[pages.length - 1];
+  const previousPage = pages[pages.length - 2];
+
+  if (pages.length > 1 && lastPage.length < REPORT_PRINT_MIN_LAST_PAGE_ROWS && previousPage.length > REPORT_PRINT_MIN_LAST_PAGE_ROWS) {
+    const rowsToMove = Math.min(REPORT_PRINT_MIN_LAST_PAGE_ROWS - lastPage.length, previousPage.length - REPORT_PRINT_MIN_LAST_PAGE_ROWS);
+    const movedRows = previousPage.splice(previousPage.length - rowsToMove, rowsToMove);
+    lastPage.unshift(...movedRows);
+  }
+
+  return pages;
+}
+
 function normalizeCostUnit(row) {
   const costUnitId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
@@ -257,9 +350,31 @@ function getExpenseStatusClassName(value) {
   return 'pending';
 }
 
+function getReportReceiptDateInput(row) {
+  return row.receiptDateInput || formatDateForInput(row.receiptDate) || row.dateInput || formatDateForInput(row.date);
+}
+
+function getReportReceiptDate(row) {
+  return row.receiptDate || formatDate(row.receiptDateInput) || row.date || formatDate(row.dateInput);
+}
+
+function getReportFilterDateInput(row) {
+  return row.dateInput || formatDateForInput(row.date);
+}
+
 function normalizeDailyExpense(row, subsidiaryById = new Map()) {
   const expenseDate = getField(row, ['expenseDate', 'ExpenseDate', 'date', 'Date']);
-  const receiptDate = getField(row, ['receiptDate', 'ReceiptDate']);
+  const receiptDate = getField(row, [
+    'receiptDate',
+    'ReceiptDate',
+    'receiptdate',
+    'Receipt_Date',
+    'receipt_Date',
+    'receipt_date',
+    'Receipt_Date',
+    'dateReceipt',
+    'DateReceipt',
+  ]);
   const subsidiaryId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'subsidiaryId', 'SubsidiaryId']);
   const expenseId = getField(row, ['expenseID', 'expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']);
   const attachmentValue = getField(row, ['attachment', 'Attachment']);
@@ -342,13 +457,15 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const [hasCurrentEmployee, setHasCurrentEmployee] = useState(false);
   const [reportDate, setReportDate] = useState(getTodayInputDate);
   const [purpose, setPurpose] = useState('Reimbursement');
-  const [dateFrom, setDateFrom] = useState('2026-05-05');
-  const [dateTo, setDateTo] = useState('2026-05-09');
-  const reportNo = 'ER-2026-0001';
+  const [dateFrom, setDateFrom] = useState(getTodayInputDate);
+  const [dateTo, setDateTo] = useState(getTodayInputDate);
+  const [reportNo, setReportNo] = useState('');
+  const [reportNoError, setReportNoError] = useState('');
+  const [isGeneratingNo, setIsGeneratingNo] = useState(false);
   const approvedRows = useMemo(() => rows.filter((row) => normalizeExpenseStatusValue(row.statusValue ?? row.status) === 1), [rows]);
   const filteredReportRows = useMemo(() => {
     return approvedRows.filter((row) => {
-      const rowDate = row.dateInput || formatDateForInput(row.date);
+      const rowDate = getReportFilterDateInput(row);
 
       if (!rowDate) {
         return false;
@@ -367,6 +484,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   }, [approvedRows, dateFrom, dateTo]);
   const grandTotal = filteredReportRows.reduce((sum, row) => sum + parseMoney(row.totalValue ?? row.total), 0);
   const dateRangeLabel = `${dateFrom ? formatDate(dateFrom) : 'Start'} - ${dateTo ? formatDate(dateTo) : 'End'}`;
+  const printReportPages = useMemo(() => chunkRowsForPrint(filteredReportRows), [filteredReportRows]);
 
   useEffect(() => {
     if (hasCurrentEmployee) {
@@ -414,8 +532,45 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     return () => controller.abort();
   }, []);
 
-  const handleGenerateReport = () => {
-    if (isLoading || loadError) {
+  const loadGeneratedNo = async () => {
+    const token = getToken();
+    setIsGeneratingNo(true);
+    setReportNoError('');
+
+    try {
+      const response = await fetch(buildApiUrl(DAILY_EXPENSE_GENERATED_NO_ENDPOINT), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to generate report number.');
+      }
+
+      const generatedNo = getGeneratedNoFromApi(data);
+
+      if (!generatedNo) {
+        throw new Error('Generated report number was not returned by the API.');
+      }
+
+      setReportNo(generatedNo);
+      return generatedNo;
+    } catch (error) {
+      setReportNoError(error.message || 'Unable to generate report number.');
+      return '';
+    } finally {
+      setIsGeneratingNo(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    if (isLoading || loadError || isGeneratingNo) {
+      return;
+    }
+
+    const generatedNo = await loadGeneratedNo();
+
+    if (!generatedNo) {
       return;
     }
 
@@ -449,6 +604,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
         {loadError ? <div className="etr-expense-save-message is-error">{loadError}</div> : null}
         {employeeLoadError ? <div className="etr-expense-save-message is-error">{employeeLoadError}</div> : null}
+        {reportNoError ? <div className="etr-expense-save-message is-error">{reportNoError}</div> : null}
 
         <div className="etr-report-builder-layout">
           <div className="etr-report-control-grid">
@@ -468,105 +624,151 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
               <span>Purpose</span>
               <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
             </label>
-            <label>
-              <span>Date From</span>
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-            </label>
-            <label>
-              <span>Date To</span>
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            </label>
+            <div className="etr-report-date-range-panel">
+              <label>
+                <span>Date From</span>
+                <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+              </label>
+              <label>
+                <span>Date To</span>
+                <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+              </label>
+              <div className="etr-report-total-preview">
+                <span>Total Reimbursement</span>
+                <strong>PHP {formatMoney(grandTotal)}</strong>
+              </div>
+            </div>
           </div>
 
           <aside className="etr-report-filter-card">
             <span>Generate No</span>
-            <strong>{reportNo}</strong>
+            <strong>{reportNo || 'Ready to generate'}</strong>
             <p>{dateRangeLabel}</p>
-            <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || !!loadError}>
-              {isLoading ? 'Loading Expenses...' : 'Generate Expense Report'}
+            <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || isGeneratingNo || !!loadError}>
+              {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating No...' : 'Generate Expense Report'}
             </button>
           </aside>
         </div>
+
+        <section className="etr-report-preview-panel" aria-label="Reimbursement preview">
+          <div className="etr-report-preview-table-wrap">
+            <table className="etr-report-preview-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Reference No</th>
+                  <th>Description</th>
+                  <th className="is-number">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReportRows.length > 0 ? filteredReportRows.map((row) => (
+                  <tr key={row.expenseId || row.referenceNo || `${row.receiptDateInput || row.dateInput}-${row.total}`}>
+                    <td>{getReportReceiptDate(row)}</td>
+                    <td>{row.referenceNo}</td>
+                    <td>{row.description || row.expenseType}</td>
+                    <td className="is-number">PHP {formatMoney(row.totalValue ?? row.total)}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="4">No reimbursements found for the selected date range.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section className="etr-report-print-only" aria-hidden="true">
-        <section className="etr-report-paper" aria-label="Final expense report">
-        <div className="etr-report-company-bar">Masigasig Distribution and Logistics Inc.</div>
-        <div className="etr-report-title-row">
-          <div>
-            <h2>FINAL REPORT</h2>
-          </div>
-          <div className="etr-report-number">
-            <span>Generate No:</span>
-            <strong>{reportNo}</strong>
-          </div>
-        </div>
+        {printReportPages.map((pageRows, pageIndex) => {
+          const isLastPage = pageIndex === printReportPages.length - 1;
 
-        <div className="etr-report-info-grid">
-          <div>
-            <span>Employee No.</span>
-            <strong>{employeeNo}</strong>
-          </div>
-          <div>
-            <span>Name of Employee</span>
-            <strong>{employeeName}</strong>
-          </div>
-          <div>
-            <span>Date</span>
-            <strong>{formatDate(reportDate)}</strong>
-          </div>
-          <div className="is-purpose">
-            <span>Purpose</span>
-            <strong>{purpose}</strong>
-          </div>
-        </div>
+          return (
+            <section className="etr-report-paper" aria-label="Final expense report" key={`print-page-${pageIndex}`}>
+              <div className="etr-report-company-bar">Masigasig Distribution and Logistics Inc.</div>
+              <div className="etr-report-title-row">
+                <div>
+                  <h2>REIMBURSEMENT OF EXPENSES</h2>
+                  <p>{printReportPages.length > 1 ? `Page ${pageIndex + 1} of ${printReportPages.length}` : 'Expense reimbursement report'}</p>
+                </div>
+                <div className="etr-report-number">
+                  <span>Generate No:</span>
+                  <strong>{reportNo}</strong>
+                </div>
+              </div>
 
-        <div className="etr-report-table-wrap">
-          <table className="etr-report-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Reference No</th>
-                <th>Particulars / Description</th>
-                <th>Total Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredReportRows.length > 0 ? filteredReportRows.map((row) => (
-                <tr key={row.expenseId || row.referenceNo || `${row.dateInput}-${row.total}`}>
-                  <td>{row.date || formatDate(row.dateInput)}</td>
-                  <td>{row.referenceNo}</td>
-                  <td>{row.description || row.expenseType}</td>
-                  <td className="is-number">{formatMoney(row.totalValue ?? row.total)}</td>
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan="4" className="etr-report-empty">No approved transactions found.</td>
-                </tr>
-              )}
-              <tr className="etr-report-total-row">
-                <td colSpan="3">TOTAL</td>
-                <td className="is-number">{formatMoney(grandTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+              <div className="etr-report-info-grid">
+                <div>
+                  <span>Employee No.</span>
+                  <strong>{employeeNo}</strong>
+                </div>
+                <div>
+                  <span>Name of Employee</span>
+                  <strong>{formatPrintUppercase(employeeName)}</strong>
+                </div>
+                <div>
+                  <span>Date</span>
+                  <strong>{formatDate(reportDate)}</strong>
+                </div>
+                <div className="is-purpose">
+                  <span>Purpose</span>
+                  <strong>{formatPrintUppercase(purpose)} {dateRangeLabel ? `(${dateRangeLabel})` : ''}</strong>
+                </div>
+              </div>
 
-        <div className="etr-report-signatures">
-          <div>
-            <span>Submitted By</span>
-            <strong>{employeeName}</strong>
-          </div>
-          <div>
-            <span>Verified By</span>
-            <strong>{REPORT_VERIFIED_BY}</strong>
-          </div>
-          <div>
-            <span>Approved By</span>
-            <strong>{REPORT_APPROVED_BY}</strong>
-          </div>
-        </div>
-      </section>
+              <div className="etr-report-table-wrap">
+                <table className="etr-report-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Reference No</th>
+                      <th>Particulars / Description</th>
+                      <th>Total Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.length > 0 ? pageRows.map((row) => (
+                      <tr key={row.expenseId || row.referenceNo || `${row.receiptDateInput || row.dateInput}-${row.total}`}>
+                        <td>{getReportReceiptDate(row)}</td>
+                        <td>{row.referenceNo}</td>
+                        <td>{formatPrintUppercase(row.description || row.expenseType)}</td>
+                        <td className="is-number">{formatMoney(row.totalValue ?? row.total)}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan="4" className="etr-report-empty">No transactions found for the selected date range.</td>
+                      </tr>
+                    )}
+                    {isLastPage ? (
+                      <tr className="etr-report-total-row">
+                        <td colSpan="3">TOTAL</td>
+                        <td className="is-number">{formatMoney(grandTotal)}</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+
+              {isLastPage ? (
+                <div className="etr-report-signatures">
+                  <div>
+                    <span>Submitted By</span>
+                    <strong>{formatPrintUppercase(employeeName)}</strong>
+                  </div>
+                  <div>
+                    <span>Verified By</span>
+                    <strong>{REPORT_VERIFIED_BY}</strong>
+                  </div>
+                  <div>
+                    <span>Approved By</span>
+                    <strong>{REPORT_APPROVED_BY}</strong>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
       </section>
     </div>
   );
