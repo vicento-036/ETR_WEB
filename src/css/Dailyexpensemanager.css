@@ -513,6 +513,12 @@
   line-height: 1.4;
 }
 
+.etr-report-action-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .etr-report-generate-button {
   justify-self: stretch;
   min-height: 42px;
@@ -521,9 +527,11 @@
   background: linear-gradient(180deg, #243f59 0%, #172d43 100%);
   color: #ffffff;
   cursor: pointer;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  padding: 0 14px;
+  line-height: 1.2;
+  padding: 0 10px;
 }
 
 .etr-report-generate-button:disabled {
@@ -614,204 +622,6 @@
   white-space: nowrap;
 }
 
-.etr-report-print-only {
-  display: none;
-}
-
-.etr-report-paper {
-  position: relative;
-  isolation: isolate;
-  width: min(100%, 1020px);
-  margin: 0 auto;
-  border: 1px solid #c4ccd4;
-  background: #ffffff;
-  box-shadow: 0 26px 70px rgba(12, 26, 42, 0.14);
-  color: #17283a;
-  overflow: hidden;
-  padding: 26px;
-}
-
-.etr-report-company-bar {
-  border-top: 8px solid #4c5965;
-  background: #ffffff;
-  color: #1f2f3f;
-  font-size: 0.84rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  padding: 7px 10px;
-  text-align: center;
-}
-
-.etr-report-title-row {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 18px;
-  border-right: 1px solid #8d98a3;
-  border-left: 1px solid #8d98a3;
-  border-bottom: 1px solid #8d98a3;
-  padding: 16px 18px;
-}
-
-.etr-report-title-row h2 {
-  margin: 0;
-  color: #111f2c;
-  font-size: 1.22rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-.etr-report-title-row p {
-  margin: 4px 0 0;
-  color: #52616f;
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.etr-report-number {
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  min-width: 170px;
-  border-left: 1px solid #ccd3da;
-  padding-left: 18px;
-  text-align: right;
-}
-
-.etr-report-number span,
-.etr-report-info-grid span,
-.etr-report-signatures span {
-  color: #4d5c68;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.etr-report-number strong {
-  color: #13283b;
-  font-size: 0.98rem;
-  font-weight: 700;
-}
-
-.etr-report-info-grid {
-  display: grid;
-  grid-template-columns: 1fr 2.2fr 1fr;
-  border-left: 1px solid #8d98a3;
-  border-top: 1px solid #8d98a3;
-  margin-top: 18px;
-}
-
-.etr-report-info-grid > div {
-  min-height: 60px;
-  border-right: 1px solid #8d98a3;
-  border-bottom: 1px solid #8d98a3;
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  padding: 9px 11px;
-}
-
-.etr-report-info-grid .is-purpose {
-  grid-column: span 3;
-}
-
-.etr-report-info-grid strong {
-  color: #17283a;
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.35;
-  min-height: 20px;
-}
-
-.etr-report-table-wrap {
-  overflow-x: auto;
-  margin-top: 20px;
-}
-
-.etr-report-table {
-  width: 100%;
-  min-width: 760px;
-  border-collapse: collapse;
-  color: #17283a;
-  font-size: 0.88rem;
-}
-
-.etr-report-table th,
-.etr-report-table td {
-  border: 1px solid #848f9a;
-  padding: 11px 12px;
-  text-align: left;
-  vertical-align: top;
-}
-
-.etr-report-table th {
-  background: #ffffff;
-  color: #1f2f3f;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.etr-report-table tbody td {
-  height: 42px;
-}
-
-.etr-report-table .is-number {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.etr-report-empty {
-  color: #637384;
-  font-weight: 600;
-  height: 72px;
-  text-align: center !important;
-  vertical-align: middle !important;
-}
-
-.etr-report-total-row td {
-  background: #ffffff;
-  color: #111f2c;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.etr-report-signatures {
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
-  border-left: 1px solid #848f9a;
-  border-top: 1px solid #848f9a;
-  margin-top: 30px;
-}
-
-.etr-report-signatures > div {
-  min-height: 98px;
-  border-right: 1px solid #848f9a;
-  border-bottom: 1px solid #848f9a;
-  display: grid;
-  align-content: space-between;
-  gap: 22px;
-  padding: 10px 12px;
-  text-align: center;
-}
-
-.etr-report-signatures strong {
-  color: #17283a;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.etr-report-signatures span {
-  border-bottom: 1px solid #6c7884;
-  display: block;
-  margin: 0 -12px;
-  padding: 0 12px 9px;
-}
-
 @media (max-width: 900px) {
   .etr-expense-toolbar,
   .etr-expense-table-head {
@@ -846,18 +656,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .etr-report-paper {
-    padding: 18px;
-  }
-
-  .etr-report-info-grid,
-  .etr-report-signatures {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .etr-report-info-grid .is-purpose {
-    grid-column: span 2;
-  }
 }
 
 @media (max-width: 640px) {
@@ -919,234 +717,11 @@
   }
 
   .etr-report-control-grid label.is-wide,
-  .etr-report-date-range-panel,
-  .etr-report-info-grid .is-purpose {
+  .etr-report-date-range-panel {
     grid-column: span 1;
   }
 
   .etr-report-date-range-panel {
     grid-template-columns: 1fr;
-  }
-
-  .etr-report-title-row {
-    flex-direction: column;
-  }
-
-  .etr-report-number {
-    border-left: 0;
-    padding-left: 0;
-    text-align: left;
-  }
-
-  .etr-report-info-grid,
-  .etr-report-signatures {
-    grid-template-columns: 1fr;
-  }
-
-  .etr-report-paper {
-    padding: 12px;
-  }
-}
-
-@media print {
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  html,
-  body {
-    width: auto;
-    min-height: 0;
-    background: #ffffff;
-    overflow: visible !important;
-  }
-
-  .etr-dashboard-topbar,
-  .etr-dashboard-sidebar,
-  .etr-dashboard-resizer,
-  .etr-dashboard-sidebar-scrim,
-  .etr-reimbursement-alert-wrap,
-  .etr-report-screen-toolbar {
-    display: none !important;
-  }
-
-  .etr-dashboard-page,
-  .etr-dashboard-shell,
-  .etr-dashboard-main,
-  .etr-dashboard-canvas,
-  .etr-dashboard-content,
-  .etr-report-workspace {
-    display: block !important;
-    margin: 0 !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    background: #ffffff !important;
-  }
-
-  .etr-report-print-only {
-    display: block !important;
-  }
-
-  .etr-report-paper {
-    display: block;
-    position: relative;
-    width: auto;
-    max-width: none;
-    border: 1px solid #c4ccd4;
-    box-shadow: none;
-    color: #17283a;
-    overflow: visible;
-    margin: 0;
-    padding: 6mm;
-    font-size: 8.5pt;
-    break-after: page;
-    page-break-after: always;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .etr-report-paper + .etr-report-paper {
-    break-before: page;
-    page-break-before: always;
-    margin-top: 0;
-  }
-
-  .etr-report-paper:last-child {
-    break-after: auto;
-    page-break-after: auto;
-  }
-
-  .etr-report-table-wrap {
-    overflow: visible;
-    margin-top: 5mm;
-  }
-
-  .etr-report-table {
-    min-width: 0;
-    table-layout: fixed;
-    font-size: 7.8pt;
-    page-break-inside: auto;
-  }
-
-  .etr-report-table th:nth-child(1),
-  .etr-report-table td:nth-child(1) {
-    width: 20mm;
-  }
-
-  .etr-report-table th:nth-child(2),
-  .etr-report-table td:nth-child(2) {
-    width: 28mm;
-  }
-
-  .etr-report-table th:nth-child(4),
-  .etr-report-table td:nth-child(4) {
-    width: 28mm;
-  }
-
-  .etr-report-table thead {
-    display: table-header-group;
-  }
-
-  .etr-report-table tfoot {
-    display: table-footer-group;
-  }
-
-  .etr-report-table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .etr-report-table th,
-  .etr-report-table td {
-    padding: 6px 7px;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .etr-report-table tbody td {
-    height: auto;
-    line-height: 1.28;
-  }
-
-  .etr-report-title-row,
-  .etr-report-info-grid,
-  .etr-report-total-row,
-  .etr-report-signatures {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .etr-report-signatures {
-    break-before: avoid;
-    page-break-before: avoid;
-  }
-
-  .etr-report-title-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 38mm;
-    align-items: stretch;
-    gap: 0;
-    padding: 10px 12px;
-  }
-
-  .etr-report-title-row h2 {
-    font-size: 1.02rem;
-    letter-spacing: 0.04em;
-    line-height: 1.2;
-  }
-
-  .etr-report-number {
-    border-left: 1px solid #ccd3da;
-    min-width: 0;
-    padding-left: 10px;
-    text-align: right;
-  }
-
-  .etr-report-number span,
-  .etr-report-info-grid span,
-  .etr-report-signatures span {
-    font-size: 0.58rem;
-    letter-spacing: 0.04em;
-  }
-
-  .etr-report-number strong,
-  .etr-report-info-grid strong,
-  .etr-report-signatures strong {
-    font-size: 0.72rem;
-    line-height: 1.25;
-  }
-
-  .etr-report-info-grid {
-    display: grid;
-    grid-template-columns: 1fr 2.2fr 1fr;
-    margin-top: 4mm;
-  }
-
-  .etr-report-info-grid > div {
-    min-height: 11mm;
-    gap: 4px;
-    padding: 6px 8px;
-  }
-
-  .etr-report-info-grid .is-purpose {
-    grid-column: span 3;
-  }
-
-  .etr-report-signatures {
-    display: grid;
-    grid-template-columns: 1fr 2fr 1fr;
-    margin-top: 5mm;
-  }
-
-  .etr-report-signatures > div {
-    min-height: 20mm;
-    gap: 12px;
-    padding: 8px 10px;
-  }
-
-  @page {
-    margin: 9mm;
-    size: A4 portrait;
   }
 }

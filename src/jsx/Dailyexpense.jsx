@@ -13,6 +13,7 @@ const ATTACHMENT_IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|p
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_LABEL = '5 MB';
 const MAX_DOCUMENT_REFERENCE_LENGTH = 50;
+const MAX_DOCUMENT_NO_LENGTH = 20;
 const MAX_DESCRIPTION_LENGTH = 255;
 const MAX_TIN_DIGITS = 14;
 const MONEY_INPUT_WARNING = 'input numbers only.';
@@ -561,10 +562,12 @@ function FormField({
           onChange={onChange}
           readOnly={readOnly}
           aria-invalid={!!error}
+          aria-required={required}
           placeholder={placeholder}
           maxLength={maxLength}
           inputMode={inputMode}
           onKeyDown={onKeyDown}
+          required={required}
         />
       )}
       {error ? <small>{error}</small> : null}
@@ -981,17 +984,15 @@ export default function ExpenseEntryView({
       }));
     } else if (name === 'documentNo') {
       const hasInvalidCharacters = /[^a-zA-Z0-9-]/.test(value);
-      const formattedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
-      const isTooLong = formattedValue.length > MAX_DOCUMENT_REFERENCE_LENGTH;
+      const cleanedValue = value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
+      const formattedValue = cleanedValue.slice(0, MAX_DOCUMENT_NO_LENGTH);
 
       setFormData((current) => ({ ...current, documentNo: formattedValue }));
       setErrors((current) => ({
         ...current,
         documentNo: hasInvalidCharacters
           ? 'Document No can only contain letters, numbers, and dash (-).'
-          : isTooLong
-            ? `Document No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`
-            : '',
+          : '',
       }));
     } else if (name === 'amount' || name === 'vat') {
       const moneyInput = sanitizeMoneyInput(value);
@@ -1051,7 +1052,8 @@ export default function ExpenseEntryView({
     if (!formData.description.trim()) nextErrors.description = 'Description is required.';
     if (formData.tinNo.replace(/\D/g, '').length > MAX_TIN_DIGITS) nextErrors.tinNo = `TIN No cannot exceed ${MAX_TIN_DIGITS} digits.`;
     if (formData.orSiNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.orSiNo = `OR/SI No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
-    if (formData.documentNo.length > MAX_DOCUMENT_REFERENCE_LENGTH) nextErrors.documentNo = `Document No cannot exceed ${MAX_DOCUMENT_REFERENCE_LENGTH} characters.`;
+    if (!formData.documentNo.trim()) nextErrors.documentNo = 'Document No is required.';
+    if (formData.documentNo.length > MAX_DOCUMENT_NO_LENGTH) nextErrors.documentNo = `Document No cannot exceed ${MAX_DOCUMENT_NO_LENGTH} characters.`;
     if (formData.description.length > MAX_DESCRIPTION_LENGTH) nextErrors.description = `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
     if (!formData.attachment.trim()) nextErrors.attachment = 'Attachment is required.';
     if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
@@ -1614,6 +1616,8 @@ export default function ExpenseEntryView({
                 onChange={updateForm}
                 error={errors.documentNo}
                 readOnly={isReadOnlyDetail}
+                required
+                maxLength={MAX_DOCUMENT_NO_LENGTH}
               />
             </div>
           </section>
