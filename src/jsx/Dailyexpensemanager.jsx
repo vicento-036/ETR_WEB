@@ -11,11 +11,11 @@ const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 8;
-const REPORT_PRINT_SINGLE_PAGE_ROWS = 27;
-const REPORT_PRINT_FIRST_PAGE_ROWS = 34;
-const REPORT_PRINT_CONTINUATION_ROWS = 43;
-const REPORT_PRINT_LAST_CONTINUATION_ROWS = 37;
-const ER_FORM_FIRST_PAGE_ROWS = 18;
+const REPORT_PRINT_SINGLE_PAGE_ROWS = 22;
+const REPORT_PRINT_FIRST_PAGE_ROWS = 28;
+const REPORT_PRINT_CONTINUATION_ROWS = 40;
+const REPORT_PRINT_LAST_CONTINUATION_ROWS = 33;
+const ER_FORM_FIRST_PAGE_ROWS = 21;
 const ER_FORM_CONTINUATION_ROWS = 28;
 const ER_FORM_LAST_PAGE_ROWS = 24;
 const ER_FORM_SINGLE_PAGE_ROWS = 14;
@@ -326,6 +326,10 @@ function chunkRowsForErForm(rows) {
     return [rows];
   }
 
+  if (rows.length <= ER_FORM_FIRST_PAGE_ROWS + 1) {
+    return [rows, []];
+  }
+
   const pages = [];
   let rowIndex = Math.min(ER_FORM_FIRST_PAGE_ROWS, rows.length - 1);
   pages.push(rows.slice(0, rowIndex));
@@ -411,25 +415,69 @@ function escapePdfText(value) {
     .replace(/[^\x20-\x7E]/g, '');
 }
 
+function estimatePdfTextWidth(text, size, font = 'F1') {
+  const upperWideCharacters = new Set(['M', 'W']);
+  const upperNarrowCharacters = new Set(['I', 'J']);
+  const narrowCharacters = new Set(['i', 'j', 'l', 't', 'f', 'r', '.', ',', ':', ';', '|', '!', '\'']);
+  const mediumCharacters = new Set([' ', '-', '/', '\\', '(', ')', '[', ']']);
+  const fontWeightScale = font === 'F2' ? 1.03 : 1;
+
+  return String(text || '').split('').reduce((sum, character) => {
+    if (upperWideCharacters.has(character)) {
+      return sum + (size * 0.82 * fontWeightScale);
+    }
+
+    if (upperNarrowCharacters.has(character) || narrowCharacters.has(character)) {
+      return sum + (size * 0.34 * fontWeightScale);
+    }
+
+    if (mediumCharacters.has(character)) {
+      return sum + (size * 0.32 * fontWeightScale);
+    }
+
+    if (/[A-Z]/.test(character)) {
+      return sum + (size * 0.62 * fontWeightScale);
+    }
+
+    if (/[0-9]/.test(character)) {
+      return sum + (size * 0.56 * fontWeightScale);
+    }
+
+    return sum + (size * 0.5 * fontWeightScale);
+  }, 0);
+}
+
 function pdfText(page, text, x, y, size = 8, options = {}) {
   const safeText = escapePdfText(text);
   const align = options.align || 'left';
   const width = options.width || 0;
-  const estimatedWidth = safeText.length * size * 0.5;
-  const textX = align === 'right' ? x + width - estimatedWidth : align === 'center' ? x + ((width - estimatedWidth) / 2) : x;
   const font = options.font || 'F1';
+  const estimatedWidth = estimatePdfTextWidth(safeText, size, font);
+  const textX = align === 'right' ? x + width - estimatedWidth : align === 'center' ? x + ((width - estimatedWidth) / 2) : x;
   const gray = options.gray ?? 0;
 
   page.push(`q ${gray} g BT /${font} ${size} Tf ${textX.toFixed(2)} ${y.toFixed(2)} Td (${safeText}) Tj ET Q`);
 }
 
-function wrapPdfText(text, width, size, maxLines = 2) {
+function wrapPdfText(text, width, size, maxLines = 2, charWidthFactor = 0.52) {
   const words = String(text || '').split(/\s+/).filter(Boolean);
-  const maxChars = Math.max(4, Math.floor(width / (size * 0.52)));
+  const maxChars = Math.max(4, Math.floor(width / (size * charWidthFactor)));
   const lines = [];
   let currentLine = '';
 
   words.forEach((word) => {
+    if (word.length > maxChars) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = '';
+      }
+
+      for (let index = 0; index < word.length; index += maxChars) {
+        lines.push(word.slice(index, index + maxChars));
+      }
+      return;
+    }
+
     const candidate = currentLine ? `${currentLine} ${word}` : word;
 
     if (candidate.length <= maxChars || !currentLine) {
@@ -482,17 +530,21 @@ function drawPdfWrappedCell(page, text, x, top, width, height, options = {}) {
   pdfRect(page, x, top - height, width, height);
 
   const size = options.size || 7;
-  const lines = wrapPdfText(formatPrintUppercase(text), width - 8, size, options.maxLines || 3);
+  const paddingX = options.paddingX ?? 4;
+  const isCentered = options.align === 'center';
+  const textX = isCentered ? x : x + paddingX;
+  const textWidth = isCentered ? width : width - (paddingX * 2);
+  const lines = wrapPdfText(formatPrintUppercase(text), width - (paddingX * 2), size, options.maxLines || 3, options.charWidthFactor);
   const lineHeight = options.lineHeight || size + 2;
-  const blockHeight = lines.length * lineHeight;
+  const blockHeight = size + ((lines.length - 1) * lineHeight);
   const startY = top - ((height - blockHeight) / 2) - size;
 
   lines.forEach((line, lineIndex) => {
-    pdfText(page, line, x + (options.paddingX || 4), startY - (lineIndex * lineHeight), size, {
+    pdfText(page, line, textX, startY - (lineIndex * lineHeight), size, {
       align: options.align,
       font: options.font,
       gray: options.gray,
-      width: width - 8,
+      width: textWidth,
     });
   });
 }
@@ -688,16 +740,22 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
       return (row.expenseType || 'OTHERS') === expenseType ? sum + row.total : sum;
     }, 0),
   }), {});
+  const lastDataPageIndex = pages.reduce((lastIndex, pageRows, index) => (
+    pageRows.length ? index : lastIndex
+  ), 0);
   const pageStreams = pages.map((pageRows, pageIndex) => {
     const isFirstPage = pageIndex === 0;
     const isLastPage = pageIndex === pages.length - 1;
+    const isLastDataPage = pageIndex === lastDataPageIndex;
+    const isApprovalOnlyPage = isLastPage && !pageRows.length && pageIndex > lastDataPageIndex;
     const stream = ['0.45 w', '0.45 G', '0 g'];
     const margin = 34;
     const panelX = margin;
     const panelWidth = PDF_LANDSCAPE_WIDTH - (margin * 2);
     let top = PDF_LANDSCAPE_HEIGHT - 42;
 
-    const infoHeight = 28;
+    const infoHeight = 24;
+    const infoTextOffsetY = 15;
     const labelWidth = 92;
     const valueWidth = (panelWidth - (labelWidth * 2)) / 2;
 
@@ -720,136 +778,143 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
       });
       top -= 30;
 
-      drawPdfCell(stream, 'EMPLOYEE NO.', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
-      drawPdfCell(stream, employeeNo, panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
-      drawPdfCell(stream, 'DATE', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
-      drawPdfCell(stream, formatDate(reportDate), panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      drawPdfCell(stream, 'EMPLOYEE NO.', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, employeeNo, panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, 'DATE', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, formatDate(reportDate), panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
       top -= infoHeight;
 
-      drawPdfCell(stream, 'EMPLOYEE NAME', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
-      drawPdfCell(stream, formatPrintUppercase(employeeName), panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
-      drawPdfCell(stream, 'PERIOD COVERED', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
-      drawPdfCell(stream, `${formatDate(dateFrom)} - ${formatDate(dateTo)}`, panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      drawPdfCell(stream, 'EMPLOYEE NAME', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, formatPrintUppercase(employeeName), panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, 'PERIOD COVERED', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, `${formatDate(dateFrom)} - ${formatDate(dateTo)}`, panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
       top -= infoHeight;
 
       const descriptionLabelWidth = 136;
       const descriptionValueWidth = labelWidth + valueWidth - descriptionLabelWidth;
-      drawPdfCell(stream, 'DESCRIPTION OF CASH ADVANCES', panelX, top, descriptionLabelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17, paddingX: 4 });
-      drawPdfCell(stream, formatPrintUppercase(purpose), panelX + descriptionLabelWidth, top, descriptionValueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
-      drawPdfCell(stream, 'ER #', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
-      drawPdfCell(stream, reportNo || '', panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
-      top -= infoHeight + 24;
+      drawPdfCell(stream, 'DESCRIPTION OF CASH ADVANCES', panelX, top, descriptionLabelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY, paddingX: 4 });
+      drawPdfCell(stream, formatPrintUppercase(purpose), panelX + descriptionLabelWidth, top, descriptionValueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, 'ER #', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: infoTextOffsetY });
+      drawPdfCell(stream, reportNo || '', panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: infoTextOffsetY });
+      top -= infoHeight + 20;
     }
 
-    const dateWidth = 62;
-    const totalWidth = 78;
-    const minimumActivityWidth = 150;
+    const dateWidth = 56;
+    const totalWidth = 72;
+    const minimumActivityWidth = 190;
     const maxExpenseTypesWidth = panelWidth - dateWidth - totalWidth - minimumActivityWidth;
-    const desiredExpenseTypeWidths = expenseTypes.map((expenseType) => {
-      const textLength = formatPrintUppercase(expenseType).length;
-      return Math.max(64, Math.min(150, 30 + (textLength * 2.7)));
-    });
-    const desiredExpenseTypesWidth = desiredExpenseTypeWidths.reduce((sum, width) => sum + width, 0);
-    const expenseTypeScale = desiredExpenseTypesWidth > maxExpenseTypesWidth
-      ? maxExpenseTypesWidth / desiredExpenseTypesWidth
-      : 1;
-    const expenseTypeWidths = desiredExpenseTypeWidths.map((width) => Math.max(50, width * expenseTypeScale));
+    const uniformExpenseTypeWidth = expenseTypes.length
+      ? Math.max(46, Math.min(92, maxExpenseTypesWidth / expenseTypes.length))
+      : 0;
+    const expenseTypeWidths = expenseTypes.map(() => uniformExpenseTypeWidth);
     const expenseTypesWidth = expenseTypeWidths.reduce((sum, width) => sum + width, 0);
     const activityWidth = panelWidth - dateWidth - totalWidth - expenseTypesWidth;
-    const headerHeight = 46;
-    const rowHeight = 15;
+    const headerHeight = 28;
+    const bodyFontSize = expenseTypes.length > 6 ? 5 : 5.5;
+    const headerFontSize = bodyFontSize;
+    const headerLineHeight = expenseTypes.length > 6 ? 5.4 : 6;
+    const rowHeight = 14;
 
-    drawPdfCell(stream, 'DATE', panelX, top, dateWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24, align: 'center' });
-    drawPdfCell(stream, 'ACTIVITY', panelX + dateWidth, top, activityWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24 });
-    let expenseTypeX = panelX + dateWidth + activityWidth;
-    expenseTypes.forEach((expenseType, expenseIndex) => {
-      const expenseTypeWidth = expenseTypeWidths[expenseIndex];
-      drawPdfWrappedCell(stream, expenseType, expenseTypeX, top, expenseTypeWidth, headerHeight, {
-        align: 'center',
-        fill: 0.94,
-        size: expenseTypes.length > 6 ? 3.7 : 4.4,
-        font: 'F2',
-        gray: 0.08,
-        maxLines: 4,
-        lineHeight: expenseTypes.length > 6 ? 5 : 5.8,
-        paddingX: 3,
+    if (!isApprovalOnlyPage) {
+      drawPdfWrappedCell(stream, 'DATE', panelX, top, dateWidth, headerHeight, { align: 'center', fill: 0.94, size: headerFontSize, font: 'F2', gray: 0.08, maxLines: 2, lineHeight: headerLineHeight, paddingX: 3, charWidthFactor: 0.68 });
+      drawPdfWrappedCell(stream, 'ACTIVITY', panelX + dateWidth, top, activityWidth, headerHeight, { align: 'center', fill: 0.94, size: headerFontSize, font: 'F2', gray: 0.08, maxLines: 2, lineHeight: headerLineHeight, paddingX: 3, charWidthFactor: 0.68 });
+      let expenseTypeX = panelX + dateWidth + activityWidth;
+      expenseTypes.forEach((expenseType, expenseIndex) => {
+        const expenseTypeWidth = expenseTypeWidths[expenseIndex];
+        drawPdfWrappedCell(stream, expenseType, expenseTypeX, top, expenseTypeWidth, headerHeight, {
+          align: 'center',
+          fill: 0.94,
+          size: headerFontSize,
+          font: 'F2',
+          gray: 0.08,
+          maxLines: 4,
+          lineHeight: headerLineHeight,
+          paddingX: 3,
+          charWidthFactor: 0.72,
+        });
+        expenseTypeX += expenseTypeWidth;
       });
-      expenseTypeX += expenseTypeWidth;
-    });
-    drawPdfCell(stream, 'TOTAL', panelX + panelWidth - totalWidth, top, totalWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24, align: 'center' });
-    top -= headerHeight;
+      drawPdfWrappedCell(stream, 'TOTAL', panelX + panelWidth - totalWidth, top, totalWidth, headerHeight, { align: 'center', fill: 0.94, size: headerFontSize, font: 'F2', gray: 0.08, maxLines: 2, lineHeight: headerLineHeight, paddingX: 3, charWidthFactor: 0.68 });
+      top -= headerHeight;
 
-    if (pageRows.length > 0) {
-      pageRows.forEach((row, rowIndex) => {
-        const fill = rowIndex % 2 === 0 ? 1 : 0.992;
-        drawPdfCell(stream, row.date, panelX, top, dateWidth, rowHeight, { align: 'center', fill, size: 5.7, font: 'F2', gray: 0.08, offsetY: 10 });
-        drawPdfCell(stream, formatPrintUppercase(row.activity).slice(0, Math.max(38, Math.floor(activityWidth / 3.6))), panelX + dateWidth, top, activityWidth, rowHeight, { fill, size: 5.7, gray: 0.1, offsetY: 10 });
-        let amountX = panelX + dateWidth + activityWidth;
-        expenseTypes.forEach((expenseType, expenseIndex) => {
-          const expenseTypeWidth = expenseTypeWidths[expenseIndex];
-          const rawAmount = row.amounts ? row.amounts[expenseType] : ((row.expenseType || 'OTHERS') === expenseType ? row.total : 0);
-          const amount = rawAmount ? formatMoney(rawAmount) : '';
-          drawPdfCell(stream, amount, amountX, top, expenseTypeWidth, rowHeight, {
+      if (pageRows.length > 0) {
+        pageRows.forEach((row, rowIndex) => {
+          const fill = rowIndex % 2 === 0 ? 1 : 0.992;
+          drawPdfCell(stream, row.date, panelX, top, dateWidth, rowHeight, { align: 'center', fill, size: bodyFontSize, font: 'F2', gray: 0.08, offsetY: 9.5 });
+          drawPdfCell(stream, formatPrintUppercase(row.activity).slice(0, Math.max(38, Math.floor(activityWidth / 3.6))), panelX + dateWidth, top, activityWidth, rowHeight, { fill, size: bodyFontSize, gray: 0.1, offsetY: 9.5 });
+          let amountX = panelX + dateWidth + activityWidth;
+          expenseTypes.forEach((expenseType, expenseIndex) => {
+            const expenseTypeWidth = expenseTypeWidths[expenseIndex];
+            const rawAmount = row.amounts ? row.amounts[expenseType] : ((row.expenseType || 'OTHERS') === expenseType ? row.total : 0);
+            const amount = rawAmount ? formatMoney(rawAmount) : '';
+            drawPdfCell(stream, amount, amountX, top, expenseTypeWidth, rowHeight, {
+              align: 'right',
+              fill,
+              size: bodyFontSize,
+              gray: 0.06,
+              offsetY: 9.5,
+              paddingX: 5,
+            });
+            amountX += expenseTypeWidth;
+          });
+          drawPdfCell(stream, formatMoney(row.total), panelX + panelWidth - totalWidth, top, totalWidth, rowHeight, {
             align: 'right',
             fill,
-            size: expenseTypes.length > 6 ? 5 : 5.5,
+            size: bodyFontSize,
             gray: 0.06,
-            offsetY: 10,
+            offsetY: 9.5,
             paddingX: 5,
           });
-          amountX += expenseTypeWidth;
+          top -= rowHeight;
         });
-        drawPdfCell(stream, formatMoney(row.total), panelX + panelWidth - totalWidth, top, totalWidth, rowHeight, {
-          align: 'right',
-          fill,
-          size: 5.8,
-          gray: 0.06,
-          offsetY: 10,
-          paddingX: 5,
+      } else {
+        drawPdfCell(stream, 'NO TRANSACTIONS FOUND FOR THE SELECTED DATE RANGE.', panelX, top, panelWidth, rowHeight, {
+          align: 'center',
+          fill: 1,
+          size: 6.5,
+          font: 'F2',
+          gray: 0.26,
+          offsetY: 12,
         });
         top -= rowHeight;
-      });
-    } else {
-      drawPdfCell(stream, 'NO TRANSACTIONS FOUND FOR THE SELECTED DATE RANGE.', panelX, top, panelWidth, rowHeight, {
-        align: 'center',
-        fill: 1,
-        size: 6.5,
-        font: 'F2',
-        gray: 0.26,
-        offsetY: 12,
-      });
-      top -= rowHeight;
+      }
     }
 
-    if (isLastPage) {
-      const totalHeight = 32;
+    if (isLastDataPage) {
+      const totalHeight = 20;
       top -= 4;
       pdfFillRect(stream, panelX, top - totalHeight, panelWidth, totalHeight, 0.925);
       pdfRect(stream, panelX, top - totalHeight, dateWidth + activityWidth, totalHeight);
       pdfLine(stream, panelX, top, panelX + panelWidth, top, 0.75);
       pdfLine(stream, panelX, top - totalHeight, panelX + panelWidth, top - totalHeight, 0.75);
-      pdfText(stream, 'TOTALS', panelX + 10, top - 20, 7, { font: 'F2', gray: 0.04 });
+      pdfText(stream, 'TOTALS', panelX + 8, top - 12.5, bodyFontSize, { font: 'F2', gray: 0.04 });
       let totalX = panelX + dateWidth + activityWidth;
       expenseTypes.forEach((expenseType, expenseIndex) => {
         const expenseTypeWidth = expenseTypeWidths[expenseIndex];
         const x = totalX;
         pdfRect(stream, x, top - totalHeight, expenseTypeWidth, totalHeight);
-        pdfText(stream, formatMoney(expenseTotals[expenseType]), x + 3, top - 20, 5.5, {
+        pdfText(stream, formatMoney(expenseTotals[expenseType]), x + 4, top - 12.5, bodyFontSize, {
           align: 'right',
-          width: expenseTypeWidth - 6,
+          width: expenseTypeWidth - 8,
           font: 'F2',
           gray: 0.02,
         });
         totalX += expenseTypeWidth;
       });
       pdfRect(stream, panelX + panelWidth - totalWidth, top - totalHeight, totalWidth, totalHeight);
-      pdfText(stream, formatMoney(grandTotal), panelX + panelWidth - totalWidth + 8, top - 20, 5.5, {
+      pdfText(stream, formatMoney(grandTotal), panelX + panelWidth - totalWidth + 5, top - 12.5, bodyFontSize, {
         align: 'right',
-        width: totalWidth - 16,
+        width: totalWidth - 10,
         font: 'F2',
         gray: 0.02,
       });
       top -= totalHeight + 22;
+    }
+
+    if (isLastPage) {
+      if (isApprovalOnlyPage) {
+        top -= 118;
+      }
 
       const approvalsLabelX = panelX + 28;
       const approvalsLineX = panelX + 112;
@@ -872,7 +937,7 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
     }
 
     if (pages.length > 1) {
-      pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
+      pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 18, 6, {
         align: 'right',
         width: panelWidth,
         font: 'F2',
