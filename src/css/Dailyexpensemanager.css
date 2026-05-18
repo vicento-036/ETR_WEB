@@ -484,54 +484,70 @@
 }
 
 .etr-report-filter-card {
-  border: 1px solid #cfd8e2;
+  border: 1px solid #d8e1ea;
   border-radius: 8px;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   display: grid;
   align-content: start;
-  gap: 10px;
-  padding: 16px;
+  gap: 12px;
+  padding: 18px;
+  box-shadow: 0 10px 24px rgba(20, 40, 59, 0.06);
 }
 
 .etr-report-filter-card span {
-  color: #667789;
-  font-size: 0.72rem;
+  color: #60758a;
+  font-size: 0.7rem;
   font-weight: 900;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .etr-report-filter-card strong {
-  color: #14283b;
-  font-size: 1.12rem;
+  color: #0f263b;
+  font-size: 1.28rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
 }
 
 .etr-report-filter-card p {
-  margin: 0 0 8px;
-  color: #536678;
-  font-size: 0.86rem;
+  border-top: 1px solid #e5ebf1;
+  margin: 2px 0 4px;
+  padding-top: 12px;
+  color: #42596f;
+  font-size: 0.88rem;
+  font-weight: 700;
   line-height: 1.4;
 }
 
 .etr-report-action-buttons {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 2px;
 }
 
 .etr-report-generate-button {
   justify-self: stretch;
-  min-height: 42px;
-  border: 1px solid #22384d;
+  min-height: 44px;
+  border: 1px solid #1e405d;
   border-radius: 6px;
-  background: linear-gradient(180deg, #243f59 0%, #172d43 100%);
+  background: #173957;
   color: #ffffff;
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-  padding: 0 10px;
+  letter-spacing: 0;
+  line-height: 1.25;
+  padding: 0 14px;
+  text-align: center;
+  transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.etr-report-generate-button:hover:not(:disabled) {
+  background: #0f2f4b;
+  border-color: #0f2f4b;
+  transform: translateY(-1px);
 }
 
 .etr-report-generate-button:disabled {

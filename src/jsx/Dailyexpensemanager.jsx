@@ -5,6 +5,8 @@ import '../css/Dailyexpensemanager.css';
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const DAILY_EXPENSE_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/generated-no`;
+const DAILY_EXPENSE_ER_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report-generated-no`;
+const DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/pdf-summary`;
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
@@ -13,10 +15,10 @@ const REPORT_PRINT_SINGLE_PAGE_ROWS = 22;
 const REPORT_PRINT_FIRST_PAGE_ROWS = 28;
 const REPORT_PRINT_CONTINUATION_ROWS = 40;
 const REPORT_PRINT_LAST_CONTINUATION_ROWS = 33;
-const ER_FORM_FIRST_PAGE_ROWS = 27;
-const ER_FORM_CONTINUATION_ROWS = 40;
-const ER_FORM_LAST_PAGE_ROWS = 36;
-const ER_FORM_SINGLE_PAGE_ROWS = 19;
+const ER_FORM_FIRST_PAGE_ROWS = 18;
+const ER_FORM_CONTINUATION_ROWS = 28;
+const ER_FORM_LAST_PAGE_ROWS = 24;
+const ER_FORM_SINGLE_PAGE_ROWS = 14;
 const REPORT_VERIFIED_BY = 'ANGEL RASONABE';
 const REPORT_APPROVED_BY = 'VILMA C';
 const PDF_PAGE_WIDTH = 612;
@@ -163,6 +165,18 @@ function formatMoney(value) {
 
 function parseMoney(value) {
   return Number(String(value || 0).replace(/,/g, '')) || 0;
+}
+
+function stripExpenseTypeCode(value) {
+  const text = String(value || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  const separatorIndex = text.indexOf(' - ');
+
+  return separatorIndex >= 0 ? text.slice(separatorIndex + 3).trim() : text;
 }
 
 function formatPrintUppercase(value) {
@@ -352,10 +366,41 @@ function getErFormRows(rows) {
       return {
         date,
         activity: row.description || row.expenseType || '',
-        expenseType: row.expenseType || '',
+        expenseType: stripExpenseTypeCode(row.expenseType) || '',
         total: parseMoney(row.totalValue ?? row.total),
       };
     });
+}
+
+function normalizeErSummaryRows(rows, dateFrom) {
+  const activityRows = new Map();
+
+  getApiCollection(rows).forEach((row) => {
+    const dateInput = formatDateForInput(getField(row, ['entryDate', 'EntryDate', 'createdDate', 'CreatedDate', 'date', 'Date']));
+    const activity = getField(row, ['activity', 'Activity', 'description', 'Description']) || 'OTHERS';
+    const expenseType = stripExpenseTypeCode(getField(row, ['expenseType', 'ExpenseType', 'expenseTypeDescription', 'ExpenseTypeDescription'])) || 'OTHERS';
+    const total = parseMoney(getField(row, ['total', 'Total', 'amount', 'Amount']));
+    const activityKey = `${dateInput || 'no-date'}|${activity}`;
+
+    if (!activityRows.has(activityKey)) {
+      activityRows.set(activityKey, {
+        date: dateInput ? formatDate(dateInput) : '',
+        dateInput,
+        activity,
+        amounts: {},
+        total: 0,
+      });
+    }
+
+    const activityRow = activityRows.get(activityKey);
+    activityRow.amounts[expenseType] = (activityRow.amounts[expenseType] || 0) + total;
+    activityRow.total += total;
+  });
+
+  return [...activityRows.values()].sort((first, second) => {
+    const dateSort = String(first.dateInput || '').localeCompare(String(second.dateInput || ''));
+    return dateSort || first.activity.localeCompare(second.activity);
+  });
 }
 
 function escapePdfText(value) {
@@ -378,12 +423,37 @@ function pdfText(page, text, x, y, size = 8, options = {}) {
   page.push(`q ${gray} g BT /${font} ${size} Tf ${textX.toFixed(2)} ${y.toFixed(2)} Td (${safeText}) Tj ET Q`);
 }
 
+function wrapPdfText(text, width, size, maxLines = 2) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const maxChars = Math.max(4, Math.floor(width / (size * 0.52)));
+  const lines = [];
+  let currentLine = '';
+
+  words.forEach((word) => {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+
+    if (candidate.length <= maxChars || !currentLine) {
+      currentLine = candidate;
+      return;
+    }
+
+    lines.push(currentLine);
+    currentLine = word;
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.slice(0, maxLines);
+}
+
 function pdfLine(page, x1, y1, x2, y2, width = 0.6) {
-  page.push(`q 0.62 G ${width} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S Q`);
+  page.push(`q 0.72 G ${width} w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S Q`);
 }
 
 function pdfRect(page, x, y, width, height) {
-  page.push(`q 0.62 G 0.45 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S Q`);
+  page.push(`q 0.72 G 0.35 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S Q`);
 }
 
 function pdfFillRect(page, x, y, width, height, gray = 0.96) {
@@ -401,6 +471,29 @@ function drawPdfCell(page, text, x, top, width, height, options = {}) {
     font: options.font,
     gray: options.gray,
     width: width - 10,
+  });
+}
+
+function drawPdfWrappedCell(page, text, x, top, width, height, options = {}) {
+  if (options.fill !== undefined) {
+    pdfFillRect(page, x, top - height, width, height, options.fill);
+  }
+
+  pdfRect(page, x, top - height, width, height);
+
+  const size = options.size || 7;
+  const lines = wrapPdfText(formatPrintUppercase(text), width - 8, size, options.maxLines || 3);
+  const lineHeight = options.lineHeight || size + 2;
+  const blockHeight = lines.length * lineHeight;
+  const startY = top - ((height - blockHeight) / 2) - size;
+
+  lines.forEach((line, lineIndex) => {
+    pdfText(page, line, x + (options.paddingX || 4), startY - (lineIndex * lineHeight), size, {
+      align: options.align,
+      font: options.font,
+      gray: options.gray,
+      width: width - 8,
+    });
   });
 }
 
@@ -539,9 +632,9 @@ function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, 
       const totalHeight = 34;
       pdfFillRect(stream, panelX, top - totalHeight, panelWidth, totalHeight, 0.95);
       pdfRect(stream, panelX, top - totalHeight, tableDateWidth + tableRefWidth + tableDescWidth, totalHeight);
-      pdfText(stream, 'TOTAL', panelX + 10, top - 21, 10, { font: 'F2', gray: 0.05 });
+      pdfText(stream, 'TOTAL', panelX + 10, top - 21, 8, { font: 'F2', gray: 0.05 });
       pdfRect(stream, panelX + tableDateWidth + tableRefWidth + tableDescWidth, top - totalHeight, tableAmountWidth, totalHeight);
-      pdfText(stream, formatMoney(grandTotal), panelX + tableDateWidth + tableRefWidth + tableDescWidth + 8, top - 22, 12, {
+      pdfText(stream, formatMoney(grandTotal), panelX + tableDateWidth + tableRefWidth + tableDescWidth + 8, top - 22, 7, {
         align: 'right',
         width: tableAmountWidth - 16,
         font: 'F2',
@@ -564,12 +657,14 @@ function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, 
       top -= 18;
     }
 
-    pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
-      align: 'right',
-      width: panelWidth,
-      font: 'F2',
-      gray: 0.45,
-    });
+    if (pages.length > 1) {
+      pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
+        align: 'right',
+        width: panelWidth,
+        font: 'F2',
+        gray: 0.45,
+      });
+    }
 
     return stream.join('\n');
   });
@@ -579,12 +674,19 @@ function buildExpenseReportPdfBlob({ pages, reportNo, employeeNo, employeeName, 
 
 function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose, reportDate, dateFrom, dateTo, grandTotal }) {
   const pages = chunkRowsForErForm(rows);
-  const expenseTypes = [...new Set(rows.map((row) => row.expenseType || 'OTHERS'))];
+  const expenseTypes = [...new Set(rows.flatMap((row) => {
+    const amountTypes = Object.keys(row.amounts || {});
+    return amountTypes.length ? amountTypes : [row.expenseType || 'OTHERS'];
+  }))];
   const expenseTotals = expenseTypes.reduce((totals, expenseType) => ({
     ...totals,
-    [expenseType]: rows
-      .filter((row) => (row.expenseType || 'OTHERS') === expenseType)
-      .reduce((sum, row) => sum + row.total, 0),
+    [expenseType]: rows.reduce((sum, row) => {
+      if (row.amounts) {
+        return sum + (row.amounts[expenseType] || 0);
+      }
+
+      return (row.expenseType || 'OTHERS') === expenseType ? sum + row.total : sum;
+    }, 0),
   }), {});
   const pageStreams = pages.map((pageRows, pageIndex) => {
     const isFirstPage = pageIndex === 0;
@@ -607,84 +709,103 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
         gray: 0.12,
       });
       top -= 18;
-      pdfLine(stream, panelX, top, panelX + panelWidth, top, 0.8);
-      top -= 20;
+      pdfLine(stream, panelX, top, panelX + panelWidth, top, 0.45);
+      top -= 22;
 
-      pdfText(stream, 'EXPENSE REPORT', panelX, top, 13, {
+      pdfText(stream, 'EXPENSE REPORT', panelX, top, 16, {
         align: 'center',
         width: panelWidth,
         font: 'F2',
-        gray: 0.04,
+        gray: 0.02,
       });
-      top -= 26;
+      top -= 30;
 
-      drawPdfCell(stream, 'EMPLOYEE NO.', panelX, top, labelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17 });
-      drawPdfCell(stream, employeeNo, panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
-      drawPdfCell(stream, 'DATE', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17 });
-      drawPdfCell(stream, formatDate(reportDate), panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
+      drawPdfCell(stream, 'EMPLOYEE NO.', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
+      drawPdfCell(stream, employeeNo, panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      drawPdfCell(stream, 'DATE', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
+      drawPdfCell(stream, formatDate(reportDate), panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
       top -= infoHeight;
 
-      drawPdfCell(stream, 'EMPLOYEE NAME', panelX, top, labelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17 });
-      drawPdfCell(stream, formatPrintUppercase(employeeName), panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
-      drawPdfCell(stream, 'PERIOD COVERED', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17 });
-      drawPdfCell(stream, `${formatDate(dateFrom)} - ${formatDate(dateTo)}`, panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
+      drawPdfCell(stream, 'EMPLOYEE NAME', panelX, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
+      drawPdfCell(stream, formatPrintUppercase(employeeName), panelX + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      drawPdfCell(stream, 'PERIOD COVERED', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
+      drawPdfCell(stream, `${formatDate(dateFrom)} - ${formatDate(dateTo)}`, panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
       top -= infoHeight;
 
       const descriptionLabelWidth = 136;
       const descriptionValueWidth = labelWidth + valueWidth - descriptionLabelWidth;
-      drawPdfCell(stream, 'DESCRIPTION OF CASH ADVANCES', panelX, top, descriptionLabelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17, paddingX: 4 });
-      drawPdfCell(stream, formatPrintUppercase(purpose), panelX + descriptionLabelWidth, top, descriptionValueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
-      drawPdfCell(stream, 'ER #', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.965, size: 6, font: 'F2', gray: 0.2, offsetY: 17 });
-      drawPdfCell(stream, reportNo || '', panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7, font: 'F2', gray: 0.05, offsetY: 17 });
-      top -= infoHeight + 18;
+      drawPdfCell(stream, 'DESCRIPTION OF CASH ADVANCES', panelX, top, descriptionLabelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17, paddingX: 4 });
+      drawPdfCell(stream, formatPrintUppercase(purpose), panelX + descriptionLabelWidth, top, descriptionValueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      drawPdfCell(stream, 'ER #', panelX + labelWidth + valueWidth, top, labelWidth, infoHeight, { fill: 0.955, size: 6, font: 'F2', gray: 0.18, offsetY: 17 });
+      drawPdfCell(stream, reportNo || '', panelX + labelWidth + valueWidth + labelWidth, top, valueWidth, infoHeight, { fill: 1, size: 7.2, font: 'F2', gray: 0.04, offsetY: 17 });
+      top -= infoHeight + 24;
     }
 
     const dateWidth = 62;
     const totalWidth = 78;
-    const minimumActivityWidth = 180;
-    const expenseTypeWidth = Math.max(42, Math.min(84, (panelWidth - dateWidth - totalWidth - minimumActivityWidth) / Math.max(1, expenseTypes.length)));
-    const activityWidth = panelWidth - dateWidth - totalWidth - (expenseTypeWidth * Math.max(1, expenseTypes.length));
-    const headerHeight = 22;
-    const rowHeight = 12;
+    const minimumActivityWidth = 150;
+    const maxExpenseTypesWidth = panelWidth - dateWidth - totalWidth - minimumActivityWidth;
+    const desiredExpenseTypeWidths = expenseTypes.map((expenseType) => {
+      const textLength = formatPrintUppercase(expenseType).length;
+      return Math.max(64, Math.min(150, 30 + (textLength * 2.7)));
+    });
+    const desiredExpenseTypesWidth = desiredExpenseTypeWidths.reduce((sum, width) => sum + width, 0);
+    const expenseTypeScale = desiredExpenseTypesWidth > maxExpenseTypesWidth
+      ? maxExpenseTypesWidth / desiredExpenseTypesWidth
+      : 1;
+    const expenseTypeWidths = desiredExpenseTypeWidths.map((width) => Math.max(50, width * expenseTypeScale));
+    const expenseTypesWidth = expenseTypeWidths.reduce((sum, width) => sum + width, 0);
+    const activityWidth = panelWidth - dateWidth - totalWidth - expenseTypesWidth;
+    const headerHeight = 46;
+    const rowHeight = 15;
 
-    drawPdfCell(stream, 'DATE', panelX, top, dateWidth, headerHeight, { fill: 0.925, size: 5.8, font: 'F2', gray: 0.1, offsetY: 14, align: 'center' });
-    drawPdfCell(stream, 'ACTIVITY', panelX + dateWidth, top, activityWidth, headerHeight, { fill: 0.925, size: 5.8, font: 'F2', gray: 0.1, offsetY: 14 });
+    drawPdfCell(stream, 'DATE', panelX, top, dateWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24, align: 'center' });
+    drawPdfCell(stream, 'ACTIVITY', panelX + dateWidth, top, activityWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24 });
+    let expenseTypeX = panelX + dateWidth + activityWidth;
     expenseTypes.forEach((expenseType, expenseIndex) => {
-      drawPdfCell(stream, formatPrintUppercase(expenseType).slice(0, 18), panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseIndex), top, expenseTypeWidth, headerHeight, {
+      const expenseTypeWidth = expenseTypeWidths[expenseIndex];
+      drawPdfWrappedCell(stream, expenseType, expenseTypeX, top, expenseTypeWidth, headerHeight, {
         align: 'center',
-        fill: 0.925,
-        size: expenseTypes.length > 6 ? 4.4 : 5,
+        fill: 0.94,
+        size: expenseTypes.length > 6 ? 3.7 : 4.4,
         font: 'F2',
-        gray: 0.1,
-        offsetY: 14,
+        gray: 0.08,
+        maxLines: 4,
+        lineHeight: expenseTypes.length > 6 ? 5 : 5.8,
         paddingX: 3,
       });
+      expenseTypeX += expenseTypeWidth;
     });
-    drawPdfCell(stream, 'TOTAL', panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseTypes.length), top, totalWidth, headerHeight, { fill: 0.925, size: 5.8, font: 'F2', gray: 0.1, offsetY: 14, align: 'center' });
+    drawPdfCell(stream, 'TOTAL', panelX + panelWidth - totalWidth, top, totalWidth, headerHeight, { fill: 0.94, size: 5.9, font: 'F2', gray: 0.08, offsetY: 24, align: 'center' });
     top -= headerHeight;
 
     if (pageRows.length > 0) {
       pageRows.forEach((row, rowIndex) => {
-        const fill = rowIndex % 2 === 0 ? 1 : 0.99;
-        drawPdfCell(stream, row.date, panelX, top, dateWidth, rowHeight, { align: 'center', fill, size: 5.2, font: 'F2', gray: 0.08, offsetY: 8 });
-        drawPdfCell(stream, formatPrintUppercase(row.activity).slice(0, Math.max(38, Math.floor(activityWidth / 3.6))), panelX + dateWidth, top, activityWidth, rowHeight, { fill, size: 5.2, gray: 0.1, offsetY: 8 });
+        const fill = rowIndex % 2 === 0 ? 1 : 0.992;
+        drawPdfCell(stream, row.date, panelX, top, dateWidth, rowHeight, { align: 'center', fill, size: 5.7, font: 'F2', gray: 0.08, offsetY: 10 });
+        drawPdfCell(stream, formatPrintUppercase(row.activity).slice(0, Math.max(38, Math.floor(activityWidth / 3.6))), panelX + dateWidth, top, activityWidth, rowHeight, { fill, size: 5.7, gray: 0.1, offsetY: 10 });
+        let amountX = panelX + dateWidth + activityWidth;
         expenseTypes.forEach((expenseType, expenseIndex) => {
-          const amount = (row.expenseType || 'OTHERS') === expenseType ? formatMoney(row.total) : '';
-          drawPdfCell(stream, amount, panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseIndex), top, expenseTypeWidth, rowHeight, {
+          const expenseTypeWidth = expenseTypeWidths[expenseIndex];
+          const rawAmount = row.amounts ? row.amounts[expenseType] : ((row.expenseType || 'OTHERS') === expenseType ? row.total : 0);
+          const amount = rawAmount ? formatMoney(rawAmount) : '';
+          drawPdfCell(stream, amount, amountX, top, expenseTypeWidth, rowHeight, {
             align: 'right',
             fill,
-            size: expenseTypes.length > 6 ? 4.7 : 5.1,
+            size: expenseTypes.length > 6 ? 5 : 5.5,
             gray: 0.06,
-            offsetY: 8,
-            paddingX: 3,
+            offsetY: 10,
+            paddingX: 5,
           });
+          amountX += expenseTypeWidth;
         });
-        drawPdfCell(stream, formatMoney(row.total), panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseTypes.length), top, totalWidth, rowHeight, {
+        drawPdfCell(stream, formatMoney(row.total), panelX + panelWidth - totalWidth, top, totalWidth, rowHeight, {
           align: 'right',
           fill,
-          size: 5.4,
+          size: 5.8,
           gray: 0.06,
-          offsetY: 8,
+          offsetY: 10,
+          paddingX: 5,
         });
         top -= rowHeight;
       });
@@ -701,22 +822,28 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
     }
 
     if (isLastPage) {
-      const totalHeight = 30;
-      pdfFillRect(stream, panelX, top - totalHeight, panelWidth, totalHeight, 0.94);
+      const totalHeight = 32;
+      top -= 4;
+      pdfFillRect(stream, panelX, top - totalHeight, panelWidth, totalHeight, 0.925);
       pdfRect(stream, panelX, top - totalHeight, dateWidth + activityWidth, totalHeight);
-      pdfText(stream, 'TOTALS', panelX + 10, top - 19, 9.5, { font: 'F2', gray: 0.05 });
+      pdfLine(stream, panelX, top, panelX + panelWidth, top, 0.75);
+      pdfLine(stream, panelX, top - totalHeight, panelX + panelWidth, top - totalHeight, 0.75);
+      pdfText(stream, 'TOTALS', panelX + 10, top - 20, 7, { font: 'F2', gray: 0.04 });
+      let totalX = panelX + dateWidth + activityWidth;
       expenseTypes.forEach((expenseType, expenseIndex) => {
-        const x = panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseIndex);
+        const expenseTypeWidth = expenseTypeWidths[expenseIndex];
+        const x = totalX;
         pdfRect(stream, x, top - totalHeight, expenseTypeWidth, totalHeight);
-        pdfText(stream, formatMoney(expenseTotals[expenseType]), x + 3, top - 20, expenseTypes.length > 6 ? 5.2 : 6, {
+        pdfText(stream, formatMoney(expenseTotals[expenseType]), x + 3, top - 20, 5.5, {
           align: 'right',
           width: expenseTypeWidth - 6,
           font: 'F2',
           gray: 0.02,
         });
+        totalX += expenseTypeWidth;
       });
-      pdfRect(stream, panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseTypes.length), top - totalHeight, totalWidth, totalHeight);
-      pdfText(stream, formatMoney(grandTotal), panelX + dateWidth + activityWidth + (expenseTypeWidth * expenseTypes.length) + 8, top - 20, 10, {
+      pdfRect(stream, panelX + panelWidth - totalWidth, top - totalHeight, totalWidth, totalHeight);
+      pdfText(stream, formatMoney(grandTotal), panelX + panelWidth - totalWidth + 8, top - 20, 5.5, {
         align: 'right',
         width: totalWidth - 16,
         font: 'F2',
@@ -726,29 +853,32 @@ function buildErFormPdfBlob({ rows, reportNo, employeeNo, employeeName, purpose,
 
       const approvalsLabelX = panelX + 28;
       const approvalsLineX = panelX + 112;
-      const approvalsLineWidth = 150;
+      const approvalsLineWidth = 170;
       pdfText(stream, 'APPROVALS', panelX, top, 9, { font: 'F2', gray: 0.05 });
-      top -= 17;
+      pdfLine(stream, panelX, top - 6, panelX + panelWidth, top - 6, 0.35);
+      top -= 22;
       [
         ['SUBMITTED BY:', formatPrintUppercase(employeeName)],
         ['CHECKED BY:', ''],
         ['APPROVED BY:', ''],
       ].forEach(([label, name]) => {
-        pdfText(stream, label, approvalsLabelX, top, 7.5, { font: 'F2', gray: 0.05 });
+        pdfText(stream, label, approvalsLabelX, top, 7.2, { font: 'F2', gray: 0.08 });
         if (name) {
-          pdfText(stream, name, approvalsLineX, top, 7.5, { align: 'center', width: approvalsLineWidth, font: 'F2', gray: 0.05 });
+          pdfText(stream, name, approvalsLineX, top, 7.2, { align: 'center', width: approvalsLineWidth, font: 'F2', gray: 0.05 });
         }
-        pdfLine(stream, approvalsLineX, top - 2, approvalsLineX + approvalsLineWidth, top - 2, 0.55);
-        top -= 15;
+        pdfLine(stream, approvalsLineX, top - 3, approvalsLineX + approvalsLineWidth, top - 3, 0.45);
+        top -= 18;
       });
     }
 
-    pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
-      align: 'right',
-      width: panelWidth,
-      font: 'F2',
-      gray: 0.45,
-    });
+    if (pages.length > 1) {
+      pdfText(stream, `PAGE ${pageIndex + 1} OF ${pages.length}`, panelX, 34, 6, {
+        align: 'right',
+        width: panelWidth,
+        font: 'F2',
+        gray: 0.45,
+      });
+    }
 
     return stream.join('\n');
   });
@@ -961,7 +1091,6 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     });
   }, [approvedRows, dateFrom, dateTo]);
   const grandTotal = filteredReportRows.reduce((sum, row) => sum + parseMoney(row.totalValue ?? row.total), 0);
-  const erFormRows = useMemo(() => getErFormRows(filteredReportRows), [filteredReportRows]);
   const dateRangeLabel = `${dateFrom ? formatDate(dateFrom) : 'Start'} - ${dateTo ? formatDate(dateTo) : 'End'}`;
   const printReportPages = useMemo(() => chunkRowsForPrint(filteredReportRows), [filteredReportRows]);
 
@@ -1011,13 +1140,13 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     return () => controller.abort();
   }, []);
 
-  const loadGeneratedNo = async () => {
+  const loadGeneratedNo = async (endpoint = DAILY_EXPENSE_GENERATED_NO_ENDPOINT) => {
     const token = getToken();
     setIsGeneratingNo(true);
     setReportNoError('');
 
     try {
-      const response = await fetch(buildApiUrl(DAILY_EXPENSE_GENERATED_NO_ENDPOINT), {
+      const response = await fetch(buildApiUrl(endpoint), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await response.json().catch(() => ({}));
@@ -1042,8 +1171,32 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     }
   };
 
+  const loadErSummaryRows = async () => {
+    const token = getToken();
+    const query = new URLSearchParams({
+      fromDate: dateFrom,
+      toDate: dateTo,
+    });
+
+    const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT}?${query.toString()}`), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to load expense report PDF summary.');
+    }
+
+    return normalizeErSummaryRows(data, dateFrom);
+  };
+
   const handleGenerateReport = async () => {
     if (isLoading || loadError || isGeneratingNo) {
+      return;
+    }
+
+    if (filteredReportRows.length === 0) {
+      setReportNoError('No transactions found for the selected date range.');
       return;
     }
 
@@ -1064,27 +1217,47 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       grandTotal,
     });
 
-    downloadBlob(pdfBlob, `${generatedNo || 'expense-report'}.pdf`);
+    downloadBlob(pdfBlob, `ReimbursementReport-${reportDate}.pdf`);
   };
 
-  const handleGenerateErForm = () => {
-    if (isLoading || loadError) {
+  const handleGenerateErForm = async () => {
+    if (isLoading || loadError || isGeneratingNo) {
       return;
     }
 
-    const pdfBlob = buildErFormPdfBlob({
-      rows: erFormRows,
-      reportNo,
-      employeeNo,
-      employeeName,
-      purpose,
-      reportDate,
-      dateFrom,
-      dateTo,
-      grandTotal,
-    });
+    if (filteredReportRows.length === 0) {
+      setReportNoError('No transactions found for the selected date range.');
+      return;
+    }
 
-    downloadBlob(pdfBlob, `ER-FORM-${dateFrom || 'start'}-to-${dateTo || 'end'}.pdf`);
+    setReportNoError('');
+
+    try {
+      const generatedNo = await loadGeneratedNo(DAILY_EXPENSE_ER_GENERATED_NO_ENDPOINT);
+
+      if (!generatedNo) {
+        return;
+      }
+
+      const summaryRows = await loadErSummaryRows();
+      const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
+
+      const pdfBlob = buildErFormPdfBlob({
+        rows: summaryRows,
+        reportNo: generatedNo,
+        employeeNo,
+        employeeName,
+        purpose,
+        reportDate,
+        dateFrom,
+        dateTo,
+        grandTotal: summaryGrandTotal,
+      });
+
+      downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
+    } catch (error) {
+      setReportNoError(error.message || 'Unable to generate ER form.');
+    }
   };
 
   return (
@@ -1153,10 +1326,10 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
             <p>{dateRangeLabel}</p>
             <div className="etr-report-action-buttons">
               <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || isGeneratingNo || !!loadError}>
-                {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating No...' : 'Generate Expense Report'}
+                {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating No...' : 'Reimbursement Report'}
               </button>
-              <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || !!loadError}>
-                {isLoading ? 'Loading Expenses...' : 'Generate ER Form'}
+              <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || isGeneratingNo || !!loadError}>
+                {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating ER #...' : 'Expense Report'}
               </button>
             </div>
           </aside>
