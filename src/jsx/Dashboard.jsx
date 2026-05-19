@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DailyExpenseManager from './Dailyexpensemanager.jsx';
 import ExpenseEntryView from './Dailyexpense.jsx';
+import JournalEntryView, { JournalEntryManagerView } from './Journalentry.jsx';
 
 const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}';
 const DAILY_EXPENSE_MANAGER_DESCRIPTION = '{F9108E90-4118-49F1-96C5-640D98B3EED8}';
@@ -61,6 +62,7 @@ const sidebarSections = [
       { id: 'official-receipt-deductions', label: 'Official Receipt Deductions', icon: 'table' },
       { id: 'payable-entry', label: 'Payable Entry', icon: 'clipboard' },
       { id: 'voucher-payment', label: 'Voucher Payment', icon: 'folder' },
+      { id: 'journal-manager', label: 'Journal Manager', icon: 'table' },
       { id: 'journal-entry', label: 'Journal Entry', icon: 'document' },
     ],
   },
@@ -542,6 +544,14 @@ function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onO
 
   if (activeItemId === 'expense-entry') {
     return <ExpenseEntryView user={user} selectedExpense={selectedExpense} onBack={onBackToManager} />;
+  }
+
+  if (activeItemId === 'journal-manager') {
+    return <JournalEntryManagerView user={user} onNewEntry={() => onNavigate('journal-entry')} />;
+  }
+
+  if (activeItemId === 'journal-entry') {
+    return <JournalEntryView user={user} />;
   }
 
   return (
