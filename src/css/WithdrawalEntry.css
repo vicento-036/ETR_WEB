@@ -15,6 +15,9 @@
 }
 
 .etr-withdrawal-header-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 34px;
   border: 1px solid rgba(18, 62, 109, 0.16);
   border-radius: 8px;
@@ -25,6 +28,19 @@
   font-size: 0.86rem;
   font-weight: 800;
   padding: 0 14px;
+}
+
+.etr-withdrawal-header-actions button svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.etr-withdrawal-header-actions button:disabled,
+.etr-withdrawal-table-tools button:disabled,
+.etr-withdrawal-pod-inline button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .etr-withdrawal-header-actions button.is-primary {
@@ -44,6 +60,18 @@
   font-size: 0.82rem;
   font-weight: 900;
   padding: 0 12px;
+}
+
+.etr-withdrawal-status-pill.is-approved {
+  border-color: rgba(47, 163, 108, 0.26);
+  background: #eefaf3;
+  color: #1d6b3d;
+}
+
+.etr-withdrawal-status-pill.is-rejected {
+  border-color: rgba(180, 45, 45, 0.22);
+  background: #fff1f1;
+  color: #9b2c2c;
 }
 
 .etr-withdrawal-table-tools button,
@@ -163,18 +191,40 @@
   grid-column: 1 / -1;
 }
 
-.etr-withdrawal-field > span {
+.etr-withdrawal-field > button {
+  width: max-content;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: #415f7b;
+  cursor: default;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.etr-withdrawal-field > button:disabled {
+  opacity: 1;
+}
+
+.etr-withdrawal-field > button.is-link-label {
+  color: #1b5a96;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.etr-withdrawal-field > span,
+.etr-withdrawal-field > button {
   color: #415f7b;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-}
-
-.etr-withdrawal-field > span.is-link-label {
-  color: #1b5a96;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .etr-withdrawal-field input,
@@ -191,6 +241,27 @@
   font: inherit;
   font-size: 0.9rem;
   outline: none;
+}
+
+.etr-withdrawal-field input[readonly],
+.etr-withdrawal-field textarea[readonly],
+.etr-withdrawal-table input[readonly] {
+  background: #f7fbff;
+}
+
+.etr-withdrawal-field.has-error input,
+.etr-withdrawal-field.has-error select,
+.etr-withdrawal-field.has-error textarea,
+.etr-withdrawal-field.has-error .etr-withdrawal-split-input input {
+  border-color: #c93636;
+  background: #fff8f8;
+}
+
+.etr-withdrawal-field small,
+.etr-withdrawal-table-error {
+  color: #b42d2d;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .etr-withdrawal-field input,
@@ -295,6 +366,10 @@
 }
 
 .etr-withdrawal-table-tools button {
+  white-space: nowrap;
+}
+
+.etr-withdrawal-table-tools button {
   min-height: 32px;
 }
 
@@ -372,6 +447,89 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   padding: 0;
+}
+
+.etr-withdrawal-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 22, 38, 0.42);
+  padding: 22px;
+}
+
+.etr-withdrawal-modal {
+  display: grid;
+  gap: 14px;
+  width: min(620px, 100%);
+  max-height: min(680px, calc(100vh - 44px));
+  overflow: auto;
+  border: 1px solid rgba(20, 62, 109, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 26px 80px rgba(5, 19, 34, 0.28);
+  padding: 18px;
+}
+
+.etr-withdrawal-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.etr-withdrawal-modal-head h2 {
+  margin: 0;
+  color: #12314e;
+  font-size: 1rem;
+}
+
+.etr-withdrawal-modal-head button,
+.etr-withdrawal-modal > input {
+  min-height: 36px;
+  border: 1px solid rgba(27, 90, 150, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #173652;
+  font: inherit;
+  padding: 0 12px;
+}
+
+.etr-withdrawal-modal-head button {
+  color: #174b7f;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.etr-withdrawal-lookup-list {
+  display: grid;
+  gap: 8px;
+}
+
+.etr-withdrawal-lookup-list button {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(20, 62, 109, 0.12);
+  border-radius: 8px;
+  background: #f7fbff;
+  color: #173652;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.etr-withdrawal-lookup-list button:hover,
+.etr-withdrawal-lookup-list button:focus {
+  border-color: #1b5a96;
+  box-shadow: 0 0 0 3px rgba(27, 90, 150, 0.13);
+  outline: none;
+}
+
+.etr-withdrawal-lookup-list span {
+  color: #587390;
+  font-size: 0.84rem;
 }
 
 @media (max-width: 1180px) {
