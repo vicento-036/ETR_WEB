@@ -91,7 +91,7 @@
 
 .etr-expense-table-panel {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   grid-column: 1 / -1;
   border: 1px solid rgba(20, 62, 109, 0.14);
   border-radius: 8px;
@@ -164,6 +164,10 @@
   box-shadow: 0 18px 45px rgba(23, 60, 100, 0.08);
 }
 
+.etr-expense-manager-table-wrap {
+  max-height: 440px;
+}
+
 .etr-expense-table {
   width: 100%;
   min-width: 1580px;
@@ -198,62 +202,64 @@
   text-transform: uppercase;
 }
 
-.etr-expense-sort-button {
-  display: inline-flex;
+.etr-expense-sort-header {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
   min-width: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  letter-spacing: inherit;
-  padding: 0;
-  text-align: left;
-  text-transform: inherit;
 }
 
-.etr-expense-sort-button:focus {
-  outline: 2px solid rgba(27, 90, 150, 0.35);
-  outline-offset: 3px;
-}
-
-.etr-expense-sort-button span:first-child {
+.etr-expense-sort-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.etr-expense-sort-indicator {
+.etr-expense-sort-controls {
   display: grid;
   flex: 0 0 auto;
   gap: 2px;
-  width: 8px;
+  width: 10px;
 }
 
-.etr-expense-sort-indicator::before,
-.etr-expense-sort-indicator::after {
-  content: "";
-  justify-self: center;
-  border-right: 4px solid transparent;
-  border-left: 4px solid transparent;
+.etr-expense-sort-direction {
+  display: block;
+  width: 10px;
+  height: 7px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   opacity: 0.35;
 }
 
-.etr-expense-sort-indicator::before {
+.etr-expense-sort-direction:focus {
+  outline: 2px solid rgba(27, 90, 150, 0.35);
+  outline-offset: 2px;
+}
+
+.etr-expense-sort-direction.is-active {
+  opacity: 1;
+}
+
+.etr-expense-sort-direction.is-asc::before,
+.etr-expense-sort-direction.is-desc::before {
+  content: "";
+  display: block;
+  margin: 0 auto;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.etr-expense-sort-direction.is-asc::before {
   border-bottom: 5px solid currentColor;
 }
 
-.etr-expense-sort-indicator::after {
+.etr-expense-sort-direction.is-desc::before {
   border-top: 5px solid currentColor;
-}
-
-.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-asc::before,
-.etr-expense-sort-button.is-active .etr-expense-sort-indicator.is-desc::after {
-  opacity: 1;
 }
 
 .etr-expense-table tbody tr:hover {

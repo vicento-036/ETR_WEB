@@ -315,7 +315,7 @@ function isPlaceholderAuditName(name) {
 
 function getAuditEmployeeName(user) {
   if (!user) {
-    return 'Executive Service Account';
+    return '';
   }
 
   const employeeName = getUserField(user, [
@@ -345,7 +345,7 @@ function getAuditEmployeeName(user) {
     }
   }
 
-  return getUserField(user, ['username', 'Username']) || 'Executive Service Account';
+  return '';
 }
 
 function formatAuditDateTime(value) {
@@ -870,7 +870,7 @@ function JournalEntryView({ user, onSaved }) {
     return () => controller.abort();
   }, []);
 
-  const auditUserName = getAuditEmployeeName(employeeInfo || user);
+  const auditUserName = getAuditEmployeeName(employeeInfo);
   const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
   const modifiedAuditStamp = resolveAuditStamp(auditTrail.modified, auditUserName, previewAuditAt);
   const postedCancelledAuditStamp = formatAuditStampFromRecord(auditTrail.postedCancelled);

@@ -581,6 +581,7 @@ export default function ExpenseEntryView({
   onBack,
 }) {
   const attachmentInputRef = useRef(null);
+  const saveInFlightRef = useRef(false);
   const attachmentObjectUrlRef = useRef('');
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
@@ -1069,9 +1070,15 @@ export default function ExpenseEntryView({
   };
 
   const handleSave = async () => {
+    if (saveInFlightRef.current || isSaving) {
+      return;
+    }
+
     if (!validateForm()) {
       return;
     }
+
+    saveInFlightRef.current = true;
 
     const token = getToken();
     const pendingAttachmentFile = selectedAttachmentFile;
@@ -1116,8 +1123,10 @@ export default function ExpenseEntryView({
       const responseEmployeeName = data.employeeName || currentFormData.employeeName.trim();
       const responseReferenceNo = data.referenceNo || currentFormData.referenceNo.trim() || 'Generated';
 
+      const savedExpenseId = data.expenseId ?? data.expenseID ?? data.ExpenseId ?? data.ExpenseID ?? data.id ?? data.Id;
+
       const nextRow = {
-        expenseId: data.expenseId,
+        expenseId: savedExpenseId,
         status: getExpenseStatusLabel(EXPENSE_STATUS.PENDING),
         statusValue: EXPENSE_STATUS.PENDING,
         employeeNo: responseEmployeeNo,
@@ -1156,13 +1165,13 @@ export default function ExpenseEntryView({
       setSaveMessage(data.message || 'Daily expense saved successfully.');
 
       if (pendingAttachmentFile) {
-        uploadAttachmentFile(data.expenseId, pendingAttachmentFile, token)
+        uploadAttachmentFile(savedExpenseId, pendingAttachmentFile, token)
           .then((attachmentData) => {
             const savedAttachmentUrl = attachmentData?.attachmentUrl || attachmentData?.attachment || '';
             const authenticatedUrl = attachmentData?.authenticatedUrl || '';
 
             setExpenseRows((current) => current.map((row) => (
-              row.expenseId === data.expenseId
+              row.expenseId === savedExpenseId
                 ? {
                   ...row,
                   attachment: savedAttachmentUrl || row.attachment,
@@ -1178,6 +1187,7 @@ export default function ExpenseEntryView({
     } catch (error) {
       setSaveError(error.message || 'Unable to save daily expense.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };

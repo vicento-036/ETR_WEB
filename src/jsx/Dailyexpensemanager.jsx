@@ -10,7 +10,7 @@ const DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/pdf-summar
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
-const MAX_VISIBLE_PAGE_BUTTONS = 8;
+const MAX_VISIBLE_PAGE_BUTTONS = 5;
 const REPORT_PRINT_SINGLE_PAGE_ROWS = 27;
 const REPORT_PRINT_FIRST_PAGE_ROWS = 34;
 const REPORT_PRINT_CONTINUATION_ROWS = 43;
@@ -43,14 +43,71 @@ function getField(row, fieldNames) {
 }
 
 function getApiCollection(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.$values)) return data.$values;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.result)) return data.result;
-  if (Array.isArray(data?.records)) return data.records;
+  if (data == null) {
+    return [];
+  }
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (typeof data !== 'object') {
+    return [];
+  }
+
+  const unwrap = (value) => {
+    if (value == null) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (typeof value === 'object' && Array.isArray(value.$values)) {
+      return value.$values;
+    }
+
+    return null;
+  };
+
+  const rootValues = unwrap(data.$values);
+  if (rootValues) {
+    return rootValues;
+  }
+
+  for (const key of ['items', 'data', 'result', 'records']) {
+    const next = unwrap(data[key]);
+    if (next) {
+      return next;
+    }
+  }
 
   return [];
+}
+
+function dedupeNormalizedDailyExpenses(rows) {
+  const byKey = new Map();
+
+  rows.forEach((row) => {
+    const rawId = row.expenseId;
+    const id = rawId !== undefined && rawId !== null && String(rawId).trim() !== ''
+      ? String(rawId).trim()
+      : '';
+    const key = id || [
+      'k',
+      row.referenceNo,
+      row.documentNo,
+      row.dateInput,
+      row.receiptDateInput,
+      String(row.totalValue ?? row.total ?? ''),
+      row.employeeCode,
+    ].join('|');
+
+    byKey.set(key, row);
+  });
+
+  return [...byKey.values()];
 }
 
 function getGeneratedNoFromApi(data) {
@@ -267,20 +324,112 @@ function getReportEmployeeFromApi(data) {
     || normalizeReportEmployee(data?.result);
 }
 
+function getManagerSearchText(row) {
+  return columns
+    .flatMap((column) => {
+      const values = [row[column.key]];
+
+      if (column.key === 'date') {
+        values.push(row.dateInput, row.date);
+      }
+
+      if (column.key === 'receiptDate') {
+        values.push(row.receiptDateInput, row.receiptDate);
+      }
+
+      if (column.key === 'status') {
+        values.push(row.statusValue);
+      }
+
+      return values;
+    })
+    .filter((value) => value !== undefined && value !== null && String(value).trim())
+    .join(' ')
+    .toLowerCase();
+}
+
+function rowMatchesManagerQuery(row, normalizedQuery) {
+  return getManagerSearchText(row).includes(normalizedQuery);
+}
+
+function getManagerPagedRows(rows, page) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / MANAGER_PAGE_SIZE));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const start = (safePage - 1) * MANAGER_PAGE_SIZE;
+
+  return {
+    rows: rows.slice(start, start + MANAGER_PAGE_SIZE),
+    safePage,
+    totalPages,
+  };
+}
+
+function getManagerRowKey(row, index = 0) {
+  if (row.expenseId) {
+    return String(row.expenseId);
+  }
+
+  return [
+    row.referenceNo,
+    row.documentNo,
+    row.receiptDateInput,
+    row.expenseType,
+    row.subsidiary,
+    row.totalValue ?? row.total,
+    index,
+  ]
+    .filter((value) => value !== undefined && value !== null && String(value).trim())
+    .join('::') || `manager-row-${index}`;
+}
+
 function getSortValue(row, column) {
   if (column.isNumber) {
     return Number(String(row[`${column.key}Value`] ?? row[column.key] ?? 0).replace(/,/g, '')) || 0;
   }
 
-  if (column.key === 'date') {
-    return row.dateInput || row.date || '';
+  if (column.key === 'status') {
+    return String(row.statusValue ?? row.status ?? '').toLowerCase();
   }
 
-  if (column.key === 'receiptDate') {
-    return row.receiptDateInput || row.receiptDate || '';
+  if (column.key === 'date' || column.key === 'receiptDate') {
+    const dateValue = column.key === 'date'
+      ? row.dateInput || row.date
+      : row.receiptDateInput || row.receiptDate;
+    const timestamp = Date.parse(dateValue);
+
+    return Number.isNaN(timestamp) ? String(dateValue || '').toLowerCase() : timestamp;
+  }
+
+  if (column.key === 'referenceNo') {
+    const numericReference = Number(String(row.referenceNo || '').replace(/\D/g, ''));
+
+    return Number.isNaN(numericReference) || numericReference === 0
+      ? String(row.referenceNo || '').toLowerCase()
+      : numericReference;
   }
 
   return String(row[column.key] || '').toLowerCase();
+}
+
+function compareManagerRows(first, second, column, direction) {
+  const firstValue = getSortValue(first, column);
+  const secondValue = getSortValue(second, column);
+  let result = 0;
+
+  if (typeof firstValue === 'number' && typeof secondValue === 'number') {
+    result = firstValue - secondValue;
+  } else {
+    result = String(firstValue).localeCompare(String(secondValue), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  }
+
+  if (result === 0) {
+    result = getManagerRowKey(first).localeCompare(getManagerRowKey(second));
+  }
+
+  return direction === 'asc' ? result : -result;
 }
 
 function getVisiblePages(currentPage, totalPages) {
@@ -1355,11 +1504,11 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
           <div className="etr-report-control-grid">
             <label>
               <span>Employee No</span>
-              <input value={employeeNo} onChange={(event) => setEmployeeNo(event.target.value)} />
+              <input value={employeeNo} readOnly aria-readonly="true" />
             </label>
             <label>
               <span>Employee Name</span>
-              <input value={employeeName} onChange={(event) => setEmployeeName(event.target.value)} />
+              <input value={employeeName} readOnly aria-readonly="true" />
             </label>
             <label>
               <span>Date</span>
@@ -1485,7 +1634,10 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
           .map((item) => [item.costUnitId, item.display])
       );
 
-      setRows(getApiCollection(expenseData).map((row) => normalizeDailyExpense(row, subsidiaryById)));
+      const normalizedRows = getApiCollection(expenseData)
+        .map((row) => normalizeDailyExpense(row, subsidiaryById));
+
+      setRows(dedupeNormalizedDailyExpenses(normalizedRows));
     } catch (error) {
       if (error.name !== 'AbortError') {
         setRows([]);
@@ -1506,65 +1658,52 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
     return () => controller.abort();
   }, [loadDailyExpenses]);
 
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
 
+  const filteredRows = useMemo(() => {
     if (!normalizedQuery) {
       return rows;
     }
 
-    return rows.filter((row) => columns
-      .map((column) => row[column.key])
-      .join(' ')
-      .toLowerCase()
-      .includes(normalizedQuery));
-  }, [query, rows]);
+    return rows.filter((row) => rowMatchesManagerQuery(row, normalizedQuery));
+  }, [normalizedQuery, rows]);
 
   const sortedRows = useMemo(() => {
     if (!sortConfig.key) {
-      return filteredRows;
+      return [...filteredRows];
     }
 
     const column = columns.find((item) => item.key === sortConfig.key);
 
     if (!column) {
-      return filteredRows;
+      return [...filteredRows];
     }
 
-    return [...filteredRows].sort((first, second) => {
-      const firstValue = getSortValue(first, column);
-      const secondValue = getSortValue(second, column);
-
-      if (firstValue < secondValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-
-      if (firstValue > secondValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-
-      return 0;
-    });
+    return [...filteredRows].sort((first, second) => compareManagerRows(first, second, column, sortConfig.direction));
   }, [filteredRows, sortConfig]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
-  const visiblePages = getVisiblePages(page, totalPages);
-  const pagedRows = sortedRows.slice((page - 1) * MANAGER_PAGE_SIZE, page * MANAGER_PAGE_SIZE);
+  const { rows: pagedRows, safePage, totalPages } = useMemo(
+    () => getManagerPagedRows(sortedRows, page),
+    [sortedRows, page],
+  );
+  const visiblePages = getVisiblePages(safePage, totalPages);
 
   useEffect(() => {
     setPage(1);
-  }, [query, sortConfig.key, sortConfig.direction]);
+  }, [normalizedQuery, sortConfig.key, sortConfig.direction]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
 
-  const handleSort = (columnKey) => {
-    setSortConfig((current) => ({
-      key: columnKey,
-      direction: current.key === columnKey && current.direction === 'asc' ? 'desc' : 'asc',
-    }));
+  const handleSort = (event, columnKey, direction) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setSortConfig({ key: columnKey, direction });
   };
+
+  const tableBodyKey = `${normalizedQuery}|${safePage}|${sortConfig.key}|${sortConfig.direction}`;
 
   if (isReportOpen) {
     return (
@@ -1608,12 +1747,12 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Reference, employee, status, or document no"
+              placeholder="Date, reference, employee, status, or document no"
             />
           </label>
         </div>
 
-        <div className="etr-expense-table-wrap">
+        <div className="etr-expense-table-wrap etr-expense-manager-table-wrap">
           <table className="etr-expense-table etr-expense-manager-table">
             <thead>
               <tr>
@@ -1622,28 +1761,39 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
                     key={column.key}
                     aria-sort={sortConfig.key === column.key ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
                   >
-                    <button
-                      type="button"
-                      className={`etr-expense-sort-button ${sortConfig.key === column.key ? 'is-active' : ''}`}
-                      onClick={() => handleSort(column.key)}
-                    >
-                      <span>{column.label}</span>
-                      <span className={`etr-expense-sort-indicator ${sortConfig.key === column.key ? `is-${sortConfig.direction}` : ''}`} aria-hidden="true" />
-                    </button>
+                    <div className="etr-expense-sort-header">
+                      <span className="etr-expense-sort-label">{column.label}</span>
+                      <div className="etr-expense-sort-controls">
+                        <button
+                          type="button"
+                          className={`etr-expense-sort-direction is-asc ${sortConfig.key === column.key && sortConfig.direction === 'asc' ? 'is-active' : ''}`}
+                          onClick={(event) => handleSort(event, column.key, 'asc')}
+                          aria-label={`Sort ${column.label} ascending`}
+                          title={`Sort ${column.label} ascending`}
+                        />
+                        <button
+                          type="button"
+                          className={`etr-expense-sort-direction is-desc ${sortConfig.key === column.key && sortConfig.direction === 'desc' ? 'is-active' : ''}`}
+                          onClick={(event) => handleSort(event, column.key, 'desc')}
+                          aria-label={`Sort ${column.label} descending`}
+                          title={`Sort ${column.label} descending`}
+                        />
+                      </div>
+                    </div>
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody key={tableBodyKey}>
               {!isLoading && sortedRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length}>No daily expense transactions found.</td>
                 </tr>
               ) : null}
 
-              {pagedRows.map((row) => (
+              {pagedRows.map((row, rowIndex) => (
                 <tr
-                  key={row.expenseId || row.referenceNo}
+                  key={`${tableBodyKey}-${getManagerRowKey(row, rowIndex)}`}
                   className="etr-expense-clickable-row"
                   onClick={() => onOpenExpense(row)}
                 >
@@ -1665,9 +1815,9 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
         {sortedRows.length > 0 ? (
           <div className="etr-expense-pagination" aria-label="Daily expense pagination">
             <span>
-              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
+              Showing {(safePage - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(safePage * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
             </span>
-            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage === 1}>
               Previous
             </button>
             <div className="etr-expense-page-numbers">
@@ -1675,15 +1825,15 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
                 <button
                   type="button"
                   key={pageNumber}
-                  className={pageNumber === page ? 'is-active' : ''}
+                  className={pageNumber === safePage ? 'is-active' : ''}
                   onClick={() => setPage(pageNumber)}
-                  aria-current={pageNumber === page ? 'page' : undefined}
+                  aria-current={pageNumber === safePage ? 'page' : undefined}
                 >
                   {pageNumber}
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
+            <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage === totalPages}>
               Next
             </button>
           </div>

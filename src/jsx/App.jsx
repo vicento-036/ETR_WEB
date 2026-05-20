@@ -4,6 +4,7 @@ import LoginPage from './Login.jsx';
 import DashboardPage from './Dashboard.jsx';
 import appLogo from '../assets/branding/etr-logo.png';
 import { clearAuth, getToken, getUser, isTokenExpired } from '../services/authStorage';
+import { formatLoginDocumentTitle } from '../constants/documentTitle.js';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 
@@ -27,8 +28,6 @@ function App() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = 'ETR-WEB';
-
     let favicon = document.querySelector("link[rel='icon']");
     if (!favicon) {
       favicon = document.createElement('link');
@@ -39,6 +38,12 @@ function App() {
     favicon.setAttribute('type', 'image/png');
     favicon.setAttribute('href', appLogo);
   }, []);
+
+  useEffect(() => {
+    if (location.pathname === '/login') {
+      document.title = formatLoginDocumentTitle();
+    }
+  }, [location.pathname]);
 
   const confirmLogout = async () => {
     const token = getToken();
