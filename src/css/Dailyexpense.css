@@ -543,6 +543,12 @@
   background: #fff8f8;
 }
 
+.etr-expense-upload.is-drag-over {
+  border-color: #1b5a96;
+  background: #eef6fd;
+  box-shadow: 0 0 0 3px rgba(27, 90, 150, 0.13);
+}
+
 .etr-expense-upload input {
   position: absolute;
   width: 1px;
@@ -637,6 +643,123 @@
   font-size: 0.78rem;
 }
 
+.etr-expense-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.etr-expense-preview-tile {
+  position: relative;
+  min-width: 0;
+  border: 1px solid rgba(20, 62, 109, 0.1);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 4px;
+}
+
+.etr-expense-preview-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 6px;
+  background: #eef6fd;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+}
+
+.etr-expense-preview-thumb:hover,
+.etr-expense-preview-thumb:focus {
+  box-shadow: 0 0 0 3px rgba(27, 90, 150, 0.13);
+  outline: none;
+}
+
+.etr-expense-preview-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.etr-expense-preview-thumb-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #315a80;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow: hidden;
+  padding: 6px;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+.etr-expense-preview-remove {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  place-items: center;
+  border: 1px solid rgba(180, 45, 45, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 248, 248, 0.96);
+  color: #9d2b2b;
+  cursor: pointer;
+  font-size: 0;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0;
+}
+
+.etr-expense-preview-remove::before {
+  content: "x";
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.etr-expense-preview-remove:hover,
+.etr-expense-preview-remove:focus {
+  border-color: #b42d2d;
+  box-shadow: 0 0 0 3px rgba(180, 45, 45, 0.1);
+  outline: none;
+}
+
+.etr-expense-preview-tile strong,
+.etr-expense-preview-tile span {
+  display: none;
+}
+
+.etr-expense-preview-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  color: #58728e;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.etr-expense-preview-summary strong {
+  color: #244b70;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.etr-expense-preview-summary span {
+  flex: 0 0 auto;
+}
+
 .etr-expense-viewer-backdrop {
   position: fixed;
   inset: 0;
@@ -674,6 +797,20 @@
   white-space: nowrap;
 }
 
+.etr-expense-viewer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.etr-expense-viewer-counter {
+  color: #56708c;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .etr-expense-viewer-head button {
   min-height: 32px;
   border: 1px solid rgba(27, 90, 150, 0.2);
@@ -708,6 +845,51 @@
   border: 0;
   border-radius: 6px;
   background: #f2f6fa;
+}
+
+.etr-expense-viewer-loading,
+.etr-expense-viewer-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: min(78vh, 820px);
+  border-radius: 6px;
+  background: #f2f6fa;
+  color: #12314e;
+  text-align: center;
+  padding: 24px;
+}
+
+.etr-expense-viewer-error {
+  background: #fff8f8;
+  color: #9a2424;
+}
+
+.etr-expense-viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.etr-expense-viewer-nav button {
+  min-height: 32px;
+  border: 1px solid rgba(27, 90, 150, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #174b7f;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 16px;
+  font-size: 0.875rem;
+}
+
+.etr-expense-viewer-nav button:hover,
+.etr-expense-viewer-nav button:focus {
+  border-color: #1b5a96;
+  box-shadow: 0 0 0 3px rgba(27, 90, 150, 0.13);
+  outline: none;
 }
 
 .etr-expense-attachment-actions {
@@ -998,6 +1180,10 @@
     flex: 1 1 110px;
     min-height: 40px;
     padding: 0 10px;
+  }
+
+  .etr-expense-preview-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .etr-expense-table {

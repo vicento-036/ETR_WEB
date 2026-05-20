@@ -86,6 +86,91 @@ function getApiCollection(data) {
   return [];
 }
 
+function unwrapAttachmentCollection(value) {
+  if (value == null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.$values)) {
+      return value.$values;
+    }
+
+    return [value];
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return [];
+  }
+
+  if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+    try {
+      return unwrapAttachmentCollection(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return text.split(/\s*,\s*/).filter(Boolean);
+}
+
+function getAttachmentDisplayName(value) {
+  const source = String(value || '').trim();
+
+  if (!source) {
+    return '';
+  }
+
+  try {
+    if (/^https?:/i.test(source)) {
+      const url = new URL(source);
+      const segments = url.pathname.split('/').filter(Boolean);
+      return decodeURIComponent(segments[segments.length - 1] || source);
+    }
+  } catch {
+    return source;
+  }
+
+  const normalized = source.replace(/\\/g, '/');
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] || source;
+}
+
+function getDailyExpenseAttachmentItems(row) {
+  const attachmentItems = [
+    ...unwrapAttachmentCollection(getField(row, ['attachments', 'Attachments'])),
+    ...unwrapAttachmentCollection(getField(row, ['attachmentList', 'AttachmentList'])),
+  ];
+
+  if (attachmentItems.length) {
+    return attachmentItems.map((item) => {
+      if (item && typeof item === 'object') {
+        return {
+          attachment: getField(item, ['attachment', 'Attachment', 'fileName', 'FileName', 'name', 'Name', 'path', 'Path']),
+          attachmentUrl: getField(item, ['attachmentUrl', 'AttachmentUrl', 'url', 'Url', 'fileUrl', 'FileUrl', 'path', 'Path']),
+        };
+      }
+
+      return { attachment: item, attachmentUrl: '' };
+    });
+  }
+
+  const attachmentNames = unwrapAttachmentCollection(getField(row, ['attachment', 'Attachment']));
+  const attachmentUrls = unwrapAttachmentCollection(getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']));
+  const itemCount = Math.max(attachmentNames.length, attachmentUrls.length);
+
+  return Array.from({ length: itemCount }, (_, index) => ({
+    attachment: attachmentNames[index] || '',
+    attachmentUrl: attachmentUrls[index] || '',
+  }));
+}
+
 function dedupeNormalizedDailyExpenses(rows) {
   const byKey = new Map();
 
@@ -1199,11 +1284,14 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
   ]);
   const subsidiaryId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'subsidiaryId', 'SubsidiaryId']);
   const expenseId = getField(row, ['expenseID', 'expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']);
-  const attachmentValue = getField(row, ['attachment', 'Attachment']);
-  const attachmentName = String(attachmentValue || '')
-    .split(/[\\/]/)
-    .filter(Boolean)
-    .pop() || '';
+  const attachmentItems = getDailyExpenseAttachmentItems(row);
+  const attachmentNames = attachmentItems
+    .map((item) => getAttachmentDisplayName(item.attachment) || getAttachmentDisplayName(item.attachmentUrl))
+    .filter(Boolean);
+  const attachmentUrls = attachmentItems
+    .map((item) => item.attachmentUrl)
+    .filter(Boolean);
+  const attachmentName = attachmentNames.join(', ');
 
   const expenseTypeDisplay =
     getField(row, ['expenseTypeDisplay', 'ExpenseTypeDisplay'])
@@ -1248,8 +1336,13 @@ function normalizeDailyExpense(row, subsidiaryById = new Map()) {
     vatValue: getField(row, ['vat', 'Vat', 'VAT']),
     total: formatMoney(getField(row, ['total', 'Total'])),
     totalValue: getField(row, ['total', 'Total']),
-    attachment: attachmentName || attachmentValue,
-    attachmentUrl: expenseId ? `${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment` : getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']),
+    attachment: attachmentName || getField(row, ['attachment', 'Attachment']),
+    attachmentUrl: attachmentUrls.length
+      ? attachmentUrls.join(', ')
+      : expenseId
+        ? `${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment`
+        : getField(row, ['attachmentUrl', 'AttachmentUrl', 'attachmentURL', 'AttachmentURL', 'attachmentPath', 'AttachmentPath', 'fileUrl', 'FileUrl', 'url', 'Url']),
+    attachments: attachmentItems,
   };
 }
 

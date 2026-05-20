@@ -7,9 +7,10 @@ const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
-const ATTACHMENT_ACCEPT = 'image/*,application/pdf,.pdf';
-const ATTACHMENT_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|pdf|png|tif|tiff|webp)$/i;
+const ATTACHMENT_ACCEPT = 'image/*';
+const ATTACHMENT_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp)$/i;
 const ATTACHMENT_IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp)$/i;
+const MAX_ATTACHMENT_COUNT = 5;
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_LABEL = '5 MB';
 const MAX_DOCUMENT_REFERENCE_LENGTH = 50;
@@ -227,9 +228,7 @@ function isAllowedAttachment(file) {
     return false;
   }
 
-  return file.type.startsWith('image/')
-    || file.type === 'application/pdf'
-    || ATTACHMENT_EXTENSION_PATTERN.test(file.name);
+  return file.type.startsWith('image/') || ATTACHMENT_EXTENSION_PATTERN.test(file.name);
 }
 
 function isImageAttachment(file) {
@@ -288,15 +287,105 @@ function getAttachmentDisplayName(value) {
   return segments[segments.length - 1] || source;
 }
 
+function getObjectField(source, fieldNames) {
+  for (const fieldName of fieldNames) {
+    const value = source?.[fieldName];
+
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function unwrapAttachmentCollection(value) {
+  if (value == null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.$values)) {
+      return value.$values;
+    }
+
+    return [value];
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return [];
+  }
+
+  if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+    try {
+      return unwrapAttachmentCollection(JSON.parse(text));
+    } catch {
+      return [text];
+    }
+  }
+
+  return text.split(/\s*,\s*/).filter(Boolean);
+}
+
+function getRecordAttachmentItems(record) {
+  const fallbackAttachmentUrls = unwrapAttachmentCollection(
+    record?.attachmentUrl
+    || record?.AttachmentUrl
+    || record?.attachmentURL
+    || record?.AttachmentURL
+  );
+  const attachmentItems = [
+    ...unwrapAttachmentCollection(record?.attachments),
+    ...unwrapAttachmentCollection(record?.Attachments),
+    ...unwrapAttachmentCollection(record?.attachmentList),
+    ...unwrapAttachmentCollection(record?.AttachmentList),
+  ];
+
+  if (attachmentItems.length) {
+    return attachmentItems.map((item, index) => {
+      if (item && typeof item === 'object') {
+        const attachment = getObjectField(item, ['attachment', 'Attachment', 'fileName', 'FileName', 'name', 'Name', 'path', 'Path']);
+        const attachmentUrl = getObjectField(item, ['attachmentUrl', 'AttachmentUrl', 'url', 'Url', 'fileUrl', 'FileUrl', 'path', 'Path'])
+          || fallbackAttachmentUrls[index]
+          || fallbackAttachmentUrls[0]
+          || '';
+
+        return { attachment, attachmentUrl };
+      }
+
+      return { attachment: item, attachmentUrl: fallbackAttachmentUrls[index] || fallbackAttachmentUrls[0] || '' };
+    });
+  }
+
+  const attachmentNames = unwrapAttachmentCollection(record?.attachment || record?.Attachment);
+  const attachmentUrls = fallbackAttachmentUrls;
+  const itemCount = Math.max(attachmentNames.length, attachmentUrls.length);
+
+  if (!itemCount) {
+    return [];
+  }
+
+  return Array.from({ length: itemCount }, (_, index) => ({
+    attachment: attachmentNames[index] || '',
+    attachmentUrl: attachmentUrls[index] || '',
+  }));
+}
+
 function getAttachmentNameFromHeader(value) {
   const match = String(value || '').match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
 
   return match ? decodeURIComponent(match[1]) : '';
 }
 
-function createExistingAttachmentPreview(record) {
-  const attachment = record?.attachment || '';
-  const attachmentUrl = record?.attachmentUrl || '';
+function createExistingAttachmentPreviewFromItem(item, index = 0) {
+  const attachment = item?.attachment || '';
+  const attachmentUrl = item?.attachmentUrl || '';
   const url = getAttachmentUrl(attachment, attachmentUrl);
 
   if (!url) {
@@ -306,6 +395,7 @@ function createExistingAttachmentPreview(record) {
   const name = getAttachmentDisplayName(attachment) || getAttachmentDisplayName(attachmentUrl) || 'Uploaded attachment';
 
   return {
+    key: `existing-${index}-${url}`,
     name,
     size: 'Uploaded file',
     type: isImageAttachmentName(name) ? 'Image' : 'Document',
@@ -313,6 +403,28 @@ function createExistingAttachmentPreview(record) {
     isImage: isImageAttachmentName(name),
     isObjectUrl: false,
   };
+}
+
+function createExistingAttachmentPreviews(record) {
+  return getRecordAttachmentItems(record)
+    .map(createExistingAttachmentPreviewFromItem)
+    .filter(Boolean);
+}
+
+function canRenderAttachmentImage(preview) {
+  return Boolean(
+    preview?.isImage
+    && preview?.url
+    && (
+      preview.isObjectUrl
+      || /^(blob:|data:)/i.test(preview.url)
+      || /^https?:/i.test(preview.url)
+    )
+  );
+}
+
+function createExistingAttachmentPreview(record) {
+  return createExistingAttachmentPreviews(record)[0] || null;
 }
 
 function readFileAsDataUrl(file) {
@@ -323,6 +435,26 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function getAttachmentFileKey(file) {
+  return [
+    String(file?.name || '').trim().toLowerCase(),
+    file?.size || 0,
+    file?.lastModified || 0,
+  ].join('|');
+}
+
+function getAttachmentListLabel(files) {
+  if (!files.length) {
+    return '';
+  }
+
+  if (files.length === 1) {
+    return files[0].name;
+  }
+
+  return `${files.length} images selected`;
 }
 
 function formatAttachmentSize(bytes) {
@@ -582,7 +714,7 @@ export default function ExpenseEntryView({
 }) {
   const attachmentInputRef = useRef(null);
   const saveInFlightRef = useRef(false);
-  const attachmentObjectUrlRef = useRef('');
+  const attachmentObjectUrlRef = useRef([]);
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [isAccountTitlesLoading, setIsAccountTitlesLoading] = useState(false);
@@ -601,11 +733,13 @@ export default function ExpenseEntryView({
   const [expenseTypeQuery, setExpenseTypeQuery] = useState('');
   const [costUnitQuery, setCostUnitQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [selectedAttachmentFile, setSelectedAttachmentFile] = useState(null);
+  const [selectedAttachmentFiles, setSelectedAttachmentFiles] = useState([]);
+  const [currentPreviewIndex, setCurrentPreviewIndex] = useState(0);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [isAttachmentViewerOpen, setIsAttachmentViewerOpen] = useState(false);
   const [isAttachmentPreviewLoading, setIsAttachmentPreviewLoading] = useState(false);
   const [attachmentPreviewError, setAttachmentPreviewError] = useState('');
+  const [isAttachmentDragOver, setIsAttachmentDragOver] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -627,6 +761,9 @@ export default function ExpenseEntryView({
   const pageSize = 2;
   const totalPages = Math.max(1, Math.ceil(expenseRows.length / pageSize));
   const pagedRows = expenseRows.slice((page - 1) * pageSize, page * pageSize);
+  const selectedAttachmentCount = selectedAttachmentFiles.length;
+  const pendingAttachmentFiles = selectedAttachmentFiles.map((attachment) => attachment.file).filter(Boolean);
+  const hasPendingAttachmentFiles = pendingAttachmentFiles.length > 0;
   const filteredLookupRows = expenseRows.filter((row) => {
     const query = lookupQuery.trim().toLowerCase();
     if (!query) {
@@ -664,10 +801,12 @@ export default function ExpenseEntryView({
   });
 
   const revokeAttachmentObjectUrl = () => {
-    if (attachmentObjectUrlRef.current) {
-      URL.revokeObjectURL(attachmentObjectUrlRef.current);
-      attachmentObjectUrlRef.current = '';
-    }
+    const objectUrls = Array.isArray(attachmentObjectUrlRef.current)
+      ? attachmentObjectUrlRef.current
+      : [attachmentObjectUrlRef.current].filter(Boolean);
+
+    objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+    attachmentObjectUrlRef.current = [];
   };
 
   useEffect(() => () => {
@@ -742,6 +881,49 @@ export default function ExpenseEntryView({
     return data;
   };
 
+  const uploadAttachmentFiles = async (expenseId, files, token) => {
+    const validFiles = files.filter(Boolean);
+
+    if (!expenseId || !validFiles.length) {
+      return [];
+    }
+
+    if (validFiles.length === 1) {
+      return [await uploadAttachmentFile(expenseId, validFiles[0], token)];
+    }
+
+    const uploadData = new FormData();
+    validFiles.forEach((file) => {
+      uploadData.append('attachment', file);
+      uploadData.append('attachments', file);
+    });
+
+    const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment`), {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: uploadData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      return Array.isArray(data) ? data : getApiCollection(data).length ? getApiCollection(data) : [data];
+    }
+
+    const results = [];
+
+    for (const file of validFiles) {
+      results.push(await uploadAttachmentFile(expenseId, file, token));
+    }
+
+    return results;
+  };
+
+  const getUploadedAttachmentValue = (attachmentResults, ...keys) => attachmentResults
+    .map((result) => keys.map((key) => result?.[key]).find(Boolean))
+    .filter(Boolean)
+    .join(', ');
+
   const loadExistingAttachmentPreview = async (record, signal) => {
     const preview = createExistingAttachmentPreview(record);
 
@@ -761,7 +943,7 @@ export default function ExpenseEntryView({
 
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
-    attachmentObjectUrlRef.current = objectUrl;
+    attachmentObjectUrlRef.current = [...attachmentObjectUrlRef.current, objectUrl];
 
     const headerName = getAttachmentNameFromHeader(response.headers.get('content-disposition'));
     const name = headerName || preview.name;
@@ -769,6 +951,7 @@ export default function ExpenseEntryView({
 
     return {
       ...preview,
+      key: preview.key,
       name,
       size: formatAttachmentSize(blob.size),
       type: blob.type || preview.type,
@@ -776,6 +959,74 @@ export default function ExpenseEntryView({
       isImage,
       isObjectUrl: true,
     };
+  };
+
+  const loadExistingAttachmentPreviews = async (record, signal) => {
+    const previews = createExistingAttachmentPreviews(record);
+
+    if (!previews.length) {
+      return [];
+    }
+
+    const token = getToken();
+    const loadedPreviews = [];
+    let failedPreviewCount = 0;
+
+    for (const preview of previews) {
+      if (!preview?.url || /^(blob:|data:)/i.test(preview.url)) {
+        loadedPreviews.push(preview);
+        continue;
+      }
+
+      try {
+        const response = await fetch(preview.url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal,
+        });
+
+        if (!response.ok) {
+          failedPreviewCount += 1;
+          loadedPreviews.push(preview);
+          continue;
+        }
+
+        const blob = await response.blob();
+        const headerName = getAttachmentNameFromHeader(response.headers.get('content-disposition'));
+        const name = headerName || preview.name;
+        const blobLooksLikeImage = blob.type.startsWith('image/')
+          || ((!blob.type || blob.type === 'application/octet-stream') && isImageAttachmentName(name));
+
+        if (preview.isImage && !blobLooksLikeImage) {
+          failedPreviewCount += 1;
+          loadedPreviews.push({ ...preview, isImage: false, type: blob.type || preview.type });
+          continue;
+        }
+
+        const objectUrl = URL.createObjectURL(blob);
+        attachmentObjectUrlRef.current = [...attachmentObjectUrlRef.current, objectUrl];
+
+        loadedPreviews.push({
+          ...preview,
+          name,
+          size: formatAttachmentSize(blob.size),
+          type: blob.type || preview.type,
+          url: objectUrl,
+          isImage: blobLooksLikeImage || preview.isImage,
+          isObjectUrl: true,
+        });
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          throw error;
+        }
+
+        failedPreviewCount += 1;
+        loadedPreviews.push(preview);
+      }
+    }
+
+    loadedPreviews.failedPreviewCount = failedPreviewCount;
+
+    return loadedPreviews;
   };
 
   useEffect(() => {
@@ -895,10 +1146,12 @@ export default function ExpenseEntryView({
 
   useEffect(() => {
     if (selectedExpense) {
-      const existingPreview = createExistingAttachmentPreview(selectedExpense);
+      const existingPreviews = createExistingAttachmentPreviews(selectedExpense);
+      const existingPreview = existingPreviews[0] || null;
+      const controller = new AbortController();
 
       revokeAttachmentObjectUrl();
-      setSelectedAttachmentFile(null);
+      setSelectedAttachmentFiles(existingPreviews);
       setFormData(createExpenseFormFromRecord(selectedExpense));
       setErrors({});
       setSaveError('');
@@ -906,12 +1159,44 @@ export default function ExpenseEntryView({
       setIsEditingDetail(false);
       setDetailStatus(normalizeExpenseStatusValue(selectedExpense.statusValue ?? selectedExpense.status));
       setIsAttachmentViewerOpen(false);
+      setCurrentPreviewIndex(0);
       setAttachmentPreview(existingPreview);
       setIsAttachmentPreviewLoading(false);
       setAttachmentPreviewError('');
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = '';
       }
+
+      if (existingPreviews.length) {
+        setIsAttachmentPreviewLoading(true);
+        loadExistingAttachmentPreviews(selectedExpense, controller.signal)
+          .then((loadedPreviews) => {
+            if (controller.signal.aborted) {
+              return;
+            }
+
+            setSelectedAttachmentFiles(loadedPreviews);
+            setCurrentPreviewIndex(0);
+            setAttachmentPreview(loadedPreviews[0] || existingPreview);
+            setAttachmentPreviewError(
+              loadedPreviews.failedPreviewCount && !loadedPreviews.some((preview) => preview.isObjectUrl)
+                ? 'Unable to load attachment previews.'
+                : ''
+            );
+          })
+          .catch(() => {
+            if (!controller.signal.aborted) {
+              setAttachmentPreviewError('Unable to load all attachment previews.');
+            }
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) {
+              setIsAttachmentPreviewLoading(false);
+            }
+          });
+      }
+
+      return () => controller.abort();
     }
   }, [selectedExpense]);
 
@@ -1057,7 +1342,9 @@ export default function ExpenseEntryView({
     if (formData.documentNo.length > MAX_DOCUMENT_NO_LENGTH) nextErrors.documentNo = `Document No cannot exceed ${MAX_DOCUMENT_NO_LENGTH} characters.`;
     if (formData.description.length > MAX_DESCRIPTION_LENGTH) nextErrors.description = `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`;
     if (!formData.attachment.trim()) nextErrors.attachment = 'Attachment is required.';
-    if (formData.attachment && !attachmentPreview && !isDetailMode) nextErrors.attachment = 'Attach an image or PDF file.';
+    if (formData.attachment && !selectedAttachmentFiles.length && !attachmentPreview && !isDetailMode) {
+      nextErrors.attachment = 'Attach at least one image file.';
+    }
 
     const amount = parseMoney(formData.amount);
     const vat = parseMoney(formData.vat);
@@ -1081,7 +1368,7 @@ export default function ExpenseEntryView({
     saveInFlightRef.current = true;
 
     const token = getToken();
-    const pendingAttachmentFile = selectedAttachmentFile;
+    const pendingAttachmentFiles = selectedAttachmentFiles.map((attachment) => attachment.file);
     const currentFormData = { ...formData };
     const currentTotal = total;
 
@@ -1109,7 +1396,7 @@ export default function ExpenseEntryView({
           vendorID: Number(currentFormData.costUnitId),
           costUnitID: Number(currentFormData.costUnitId),
           expenseType: Number(currentFormData.expenseTypeId),
-          attachment: pendingAttachmentFile ? '' : currentFormData.attachment || '',
+          attachment: pendingAttachmentFiles.length ? '' : currentFormData.attachment || '',
         }),
       });
 
@@ -1154,7 +1441,7 @@ export default function ExpenseEntryView({
         ...createExpenseForm(employeeInfo),
         referenceNo: responseReferenceNo === 'Generated' ? '' : responseReferenceNo,
       });
-      setSelectedAttachmentFile(null);
+      setSelectedAttachmentFiles([]);
       setErrors({});
       setIsAttachmentViewerOpen(false);
       revokeAttachmentObjectUrl();
@@ -1164,11 +1451,11 @@ export default function ExpenseEntryView({
       }
       setSaveMessage(data.message || 'Daily expense saved successfully.');
 
-      if (pendingAttachmentFile) {
-        uploadAttachmentFile(savedExpenseId, pendingAttachmentFile, token)
-          .then((attachmentData) => {
-            const savedAttachmentUrl = attachmentData?.attachmentUrl || attachmentData?.attachment || '';
-            const authenticatedUrl = attachmentData?.authenticatedUrl || '';
+      if (pendingAttachmentFiles.length) {
+        uploadAttachmentFiles(savedExpenseId, pendingAttachmentFiles, token)
+          .then((attachmentResults) => {
+            const savedAttachmentUrl = getUploadedAttachmentValue(attachmentResults, 'attachmentUrl', 'attachment');
+            const authenticatedUrl = getUploadedAttachmentValue(attachmentResults, 'authenticatedUrl');
 
             setExpenseRows((current) => current.map((row) => (
               row.expenseId === savedExpenseId
@@ -1206,7 +1493,7 @@ export default function ExpenseEntryView({
     vendorID: Number(formData.costUnitId),
     expenseType: Number(formData.expenseTypeId),
     costUnitID: Number(formData.costUnitId),
-    attachment: selectedAttachmentFile ? '' : formData.attachment || '',
+    attachment: hasPendingAttachmentFiles ? '' : formData.attachment || '',
     status: normalizeExpenseStatusValue(status),
   });
 
@@ -1236,18 +1523,19 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
-      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
-      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+      const attachmentData = await uploadAttachmentFiles(selectedExpense.expenseId, pendingAttachmentFiles, token);
+      const uploadedAttachment = getUploadedAttachmentValue(attachmentData, 'attachmentUrl', 'attachment');
+      const authenticatedAttachment = getUploadedAttachmentValue(attachmentData, 'authenticatedUrl');
+      if (uploadedAttachment || authenticatedAttachment) {
         setFormData((current) => ({
           ...current,
-          attachment: attachmentData.attachmentUrl || current.attachment,
-          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+          attachment: uploadedAttachment || current.attachment,
+          attachmentUrl: authenticatedAttachment || current.attachmentUrl,
         }));
       }
 
       setIsEditingDetail(false);
-      setSelectedAttachmentFile(null);
-      setSaveMessage(attachmentData?.message || data.message || 'Daily expense updated successfully.');
+      setSaveMessage(attachmentData?.[0]?.message || data.message || 'Daily expense updated successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to update daily expense.');
     } finally {
@@ -1281,19 +1569,20 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
-      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
-      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+      const attachmentData = await uploadAttachmentFiles(selectedExpense.expenseId, pendingAttachmentFiles, token);
+      const uploadedAttachment = getUploadedAttachmentValue(attachmentData, 'attachmentUrl', 'attachment');
+      const authenticatedAttachment = getUploadedAttachmentValue(attachmentData, 'authenticatedUrl');
+      if (uploadedAttachment || authenticatedAttachment) {
         setFormData((current) => ({
           ...current,
-          attachment: attachmentData.attachmentUrl || current.attachment,
-          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+          attachment: uploadedAttachment || current.attachment,
+          attachmentUrl: authenticatedAttachment || current.attachmentUrl,
         }));
       }
 
       setIsEditingDetail(false);
       setDetailStatus(EXPENSE_STATUS.APPROVED);
-      setSelectedAttachmentFile(null);
-      setSaveMessage(attachmentData?.message || data.message || 'Daily expense approved successfully.');
+      setSaveMessage(attachmentData?.[0]?.message || data.message || 'Daily expense approved successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to approve daily expense.');
     } finally {
@@ -1327,19 +1616,20 @@ export default function ExpenseEntryView({
         throw new Error(getValidationMessage(data));
       }
 
-      const attachmentData = await uploadAttachmentFile(selectedExpense.expenseId, selectedAttachmentFile, token);
-      if (attachmentData?.attachmentUrl || attachmentData?.authenticatedUrl) {
+      const attachmentData = await uploadAttachmentFiles(selectedExpense.expenseId, pendingAttachmentFiles, token);
+      const uploadedAttachment = getUploadedAttachmentValue(attachmentData, 'attachmentUrl', 'attachment');
+      const authenticatedAttachment = getUploadedAttachmentValue(attachmentData, 'authenticatedUrl');
+      if (uploadedAttachment || authenticatedAttachment) {
         setFormData((current) => ({
           ...current,
-          attachment: attachmentData.attachmentUrl || current.attachment,
-          attachmentUrl: attachmentData.authenticatedUrl || current.attachmentUrl,
+          attachment: uploadedAttachment || current.attachment,
+          attachmentUrl: authenticatedAttachment || current.attachmentUrl,
         }));
       }
 
       setIsEditingDetail(false);
       setDetailStatus(EXPENSE_STATUS.REJECTED);
-      setSelectedAttachmentFile(null);
-      setSaveMessage(attachmentData?.message || data.message || 'Daily expense rejected successfully.');
+      setSaveMessage(attachmentData?.[0]?.message || data.message || 'Daily expense rejected successfully.');
     } catch (error) {
       setSaveError(error.message || 'Unable to reject daily expense.');
     } finally {
@@ -1349,7 +1639,7 @@ export default function ExpenseEntryView({
 
   const handleClear = () => {
     setFormData(createExpenseForm(employeeInfo));
-    setSelectedAttachmentFile(null);
+    setSelectedAttachmentFiles([]);
     setErrors({});
     setSaveError('');
     setSaveMessage('');
@@ -1393,82 +1683,148 @@ export default function ExpenseEntryView({
     setIsCostUnitLookupOpen(false);
   };
 
-  const handleFileChange = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
+  const handleAttachmentFiles = async (fileList) => {
+    const incomingFiles = Array.from(fileList || []);
+
+    if (!incomingFiles.length) {
       return;
     }
 
-    if (!isAllowedAttachment(file)) {
-      event.target.value = '';
-      setErrors((current) => ({
-        ...current,
-        attachment: 'Image or PDF only.',
-      }));
-      return;
+    const messages = [];
+    const selectedKeys = new Set(selectedAttachmentFiles.map((attachment) => attachment.key));
+    const nextFiles = [];
+    const nextKeys = new Set(selectedKeys);
+    let duplicateCount = 0;
+    let invalidCount = 0;
+    let oversizedCount = 0;
+
+    if (selectedAttachmentFiles.length + incomingFiles.length > MAX_ATTACHMENT_COUNT) {
+      messages.push(`Maximum of ${MAX_ATTACHMENT_COUNT} images only.`);
     }
 
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      event.target.value = '';
-      setErrors((current) => ({
-        ...current,
-        attachment: `Attachment cannot exceed ${MAX_ATTACHMENT_LABEL}.`,
-      }));
-      return;
-    }
+    for (const file of incomingFiles) {
+      const fileKey = getAttachmentFileKey(file);
 
-    revokeAttachmentObjectUrl();
-    const isImage = isImageAttachment(file);
-    let previewUrl = '';
-    let isObjectUrl = false;
-
-    try {
-      if (isImage) {
-        previewUrl = await readFileAsDataUrl(file);
-      } else {
-        previewUrl = URL.createObjectURL(file);
-        attachmentObjectUrlRef.current = previewUrl;
-        isObjectUrl = true;
+      if (!isAllowedAttachment(file) || !isImageAttachment(file)) {
+        invalidCount += 1;
+        continue;
       }
-    } catch {
-      event.target.value = '';
-      setErrors((current) => ({
-        ...current,
-        attachment: 'Unable to preview selected attachment.',
-      }));
-      return;
+
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        oversizedCount += 1;
+        continue;
+      }
+
+      if (nextKeys.has(fileKey)) {
+        duplicateCount += 1;
+        continue;
+      }
+
+      if (selectedAttachmentFiles.length + nextFiles.length >= MAX_ATTACHMENT_COUNT) {
+        continue;
+      }
+
+      nextFiles.push(file);
+      nextKeys.add(fileKey);
     }
 
-    setFormData((current) => ({ ...current, attachment: file.name, attachmentUrl: '' }));
-    setSelectedAttachmentFile(file);
-    setErrors((current) => ({ ...current, attachment: '' }));
-    setAttachmentPreviewError('');
-    setIsAttachmentPreviewLoading(false);
-    setAttachmentPreview({
-      name: file.name,
-      size: formatAttachmentSize(file.size),
-      type: file.type || 'Document',
-      url: previewUrl,
-      isImage,
-      isObjectUrl,
-    });
-    setIsAttachmentViewerOpen(false);
+    if (invalidCount) {
+      messages.push('Invalid file type. Images only.');
+    }
+
+    if (oversizedCount) {
+      messages.push(`Each image cannot exceed ${MAX_ATTACHMENT_LABEL}.`);
+    }
+
+    if (duplicateCount) {
+      messages.push('Duplicate images were skipped.');
+    }
+
+    if (nextFiles.length) {
+      try {
+        const nextAttachments = await Promise.all(nextFiles.map(async (file) => ({
+          key: getAttachmentFileKey(file),
+          file,
+          name: file.name,
+          size: formatAttachmentSize(file.size),
+          type: file.type || 'Image',
+          url: await readFileAsDataUrl(file),
+          isImage: true,
+          isObjectUrl: false,
+        })));
+
+        const updatedAttachments = [...selectedAttachmentFiles, ...nextAttachments];
+
+        setSelectedAttachmentFiles(updatedAttachments);
+        setFormData((current) => ({
+          ...current,
+          attachment: getAttachmentListLabel(updatedAttachments),
+          attachmentUrl: '',
+        }));
+        setAttachmentPreview(nextAttachments[0]);
+        setAttachmentPreviewError('');
+        setIsAttachmentPreviewLoading(false);
+        setIsAttachmentViewerOpen(false);
+      } catch {
+        messages.push('Unable to preview selected image.');
+      }
+    }
+
+    setErrors((current) => ({
+      ...current,
+      attachment: messages.join(' '),
+    }));
+  };
+
+  const handleFileChange = async (event) => {
+    await handleAttachmentFiles(event.target.files);
+
+    if (event.target) {
+      event.target.value = '';
+    }
   };
 
   const handleChooseAttachment = () => {
     attachmentInputRef.current?.click();
   };
 
-  const handlePreviewAttachment = () => {
-    if (!attachmentPreview?.url || isAttachmentPreviewLoading) {
+  const handlePreviewAttachment = (preview = attachmentPreview) => {
+    const activePreview = preview?.url ? preview : attachmentPreview;
+
+    if (!activePreview?.url || isAttachmentPreviewLoading) {
       return;
     }
 
+    setAttachmentPreview(activePreview);
+    setAttachmentPreviewError('');
     setIsAttachmentViewerOpen(true);
   };
 
+  const handleAttachmentDragOver = (event) => {
+    if (isReadOnlyDetail) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsAttachmentDragOver(true);
+  };
+
+  const handleAttachmentDragLeave = () => {
+    setIsAttachmentDragOver(false);
+  };
+
+  const handleAttachmentDrop = async (event) => {
+    if (isReadOnlyDetail) {
+      return;
+    }
+
+    event.preventDefault();
+    setIsAttachmentDragOver(false);
+    await handleAttachmentFiles(event.dataTransfer.files);
+  };
+
   const handleLoadAttachmentPreview = async () => {
-    if (!selectedExpense || selectedAttachmentFile || isAttachmentPreviewLoading) {
+    if (!selectedExpense || selectedAttachmentFiles.length || isAttachmentPreviewLoading) {
       return;
     }
 
@@ -1507,24 +1863,9 @@ export default function ExpenseEntryView({
     }
   };
 
-  const handleRemoveAttachment = () => {
-    revokeAttachmentObjectUrl();
-
-    setFormData((current) => ({ ...current, attachment: '', attachmentUrl: '' }));
-    setSelectedAttachmentFile(null);
-    setIsAttachmentViewerOpen(false);
-    setAttachmentPreview(null);
-    setIsAttachmentPreviewLoading(false);
-    setAttachmentPreviewError('');
-    setErrors((current) => ({ ...current, attachment: '' }));
-    if (attachmentInputRef.current) {
-      attachmentInputRef.current.value = '';
-    }
-  };
-
   const shouldLazyLoadAttachmentPreview = Boolean(
     selectedExpense
-    && !selectedAttachmentFile
+    && !selectedAttachmentFiles.length
     && attachmentPreview?.url
     && !attachmentPreview?.isObjectUrl
     && !/^(blob:|data:)/i.test(attachmentPreview.url)
@@ -1532,6 +1873,49 @@ export default function ExpenseEntryView({
   const canRenderAttachmentThumbnail = Boolean(
     attachmentPreview?.url && !shouldLazyLoadAttachmentPreview
   );
+
+  const handlePreviousAttachment = () => {
+    if (selectedAttachmentFiles.length <= 1) return;
+    const newIndex = currentPreviewIndex === 0 ? selectedAttachmentFiles.length - 1 : currentPreviewIndex - 1;
+    setCurrentPreviewIndex(newIndex);
+    setAttachmentPreview(selectedAttachmentFiles[newIndex]);
+    setAttachmentPreviewError('');
+  };
+
+  const handleNextAttachment = () => {
+    if (selectedAttachmentFiles.length <= 1) return;
+    const newIndex = (currentPreviewIndex + 1) % selectedAttachmentFiles.length;
+    setCurrentPreviewIndex(newIndex);
+    setAttachmentPreview(selectedAttachmentFiles[newIndex]);
+    setAttachmentPreviewError('');
+  };
+
+  const handleRemoveAttachment = (attachmentKey = '') => {
+    const updatedAttachments = attachmentKey
+      ? selectedAttachmentFiles.filter((attachment) => attachment.key !== attachmentKey)
+      : [];
+
+    setSelectedAttachmentFiles(updatedAttachments);
+    setFormData((current) => ({
+      ...current,
+      attachment: getAttachmentListLabel(updatedAttachments),
+      attachmentUrl: updatedAttachments.length ? current.attachmentUrl : '',
+    }));
+    setIsAttachmentViewerOpen(false);
+    setCurrentPreviewIndex(0);
+    setAttachmentPreview(updatedAttachments[0] || null);
+    setIsAttachmentPreviewLoading(false);
+    setAttachmentPreviewError('');
+    setErrors((current) => ({ ...current, attachment: '' }));
+
+    if (!updatedAttachments.length) {
+      revokeAttachmentObjectUrl();
+    }
+
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="etr-expense-entry">
@@ -1783,50 +2167,102 @@ export default function ExpenseEntryView({
               <h2>Attachment</h2>
               <span>Receipt preview</span>
             </div>
-            <label className={`etr-expense-upload ${errors.attachment ? 'has-error' : ''}`}>
+            <label
+              className={`etr-expense-upload ${errors.attachment ? 'has-error' : ''} ${isAttachmentDragOver ? 'is-drag-over' : ''}`}
+              onDragOver={handleAttachmentDragOver}
+              onDragLeave={handleAttachmentDragLeave}
+              onDrop={handleAttachmentDrop}
+            >
               <input
                 ref={attachmentInputRef}
                 type="file"
+                multiple
                 accept={ATTACHMENT_ACCEPT}
                 onChange={handleFileChange}
                 disabled={isReadOnlyDetail}
               />
-              <span>{isReadOnlyDetail ? 'Uploaded receipt or invoice' : 'Upload receipt or invoice'}</span>
-              <strong>{formData.attachment || 'No file selected'}</strong>
+              <span>{isReadOnlyDetail ? 'Uploaded receipt or invoice' : 'Upload receipt images'}</span>
+              <strong>
+                {selectedAttachmentCount
+                  ? `${selectedAttachmentCount}/${MAX_ATTACHMENT_COUNT} images selected`
+                  : formData.attachment || `No images selected - up to ${MAX_ATTACHMENT_COUNT}, ${MAX_ATTACHMENT_LABEL} each`}
+              </strong>
             </label>
+            <small className="etr-expense-upload-note">
+              Selected images: {selectedAttachmentCount}/{MAX_ATTACHMENT_COUNT}
+            </small>
             {errors.attachment ? <small className="etr-expense-upload-error">{errors.attachment}</small> : null}
-            <button
-              type="button"
-              className={`etr-expense-preview ${attachmentPreview?.url ? 'is-clickable' : ''}`}
-              onClick={shouldLazyLoadAttachmentPreview ? handleLoadAttachmentPreview : handlePreviewAttachment}
-              disabled={!attachmentPreview?.url || isAttachmentPreviewLoading}
-              aria-label={attachmentPreview?.url ? `View ${attachmentPreview.name}` : 'No attachment preview available'}
-            >
-              {!shouldLazyLoadAttachmentPreview && canRenderAttachmentThumbnail && attachmentPreview.isImage ? (
-                <img src={attachmentPreview.url} alt={attachmentPreview.name} />
-              ) : (
-                <div>
-                  <strong>{attachmentPreview?.name || formData.attachment || 'Preview area'}</strong>
-                  <span>
-                    {isAttachmentPreviewLoading
-                      ? 'Loading attachment preview...'
-                      : shouldLazyLoadAttachmentPreview
-                        ? 'Click to load attachment preview.'
-                        : canRenderAttachmentThumbnail
-                          ? `Click to open ${attachmentPreview.isImage ? 'image' : 'document'} preview.`
-                          : attachmentPreview
-                            ? `${attachmentPreview.type} - ${attachmentPreview.size}`
-                            : `Images and PDF receipts/invoices only. Max ${MAX_ATTACHMENT_LABEL}.`}
-                  </span>
+            {selectedAttachmentCount ? (
+              <>
+                <div className="etr-expense-preview-grid" aria-label="Selected image previews">
+                  {selectedAttachmentFiles.map((attachment) => (
+                    <div className="etr-expense-preview-tile" key={attachment.key} title={`${attachment.name} - ${attachment.size}`}>
+                      <button
+                        type="button"
+                        className="etr-expense-preview-thumb"
+                        onClick={() => handlePreviewAttachment(attachment)}
+                        aria-label={`View ${attachment.name}`}
+                      >
+                        {canRenderAttachmentImage(attachment) ? (
+                          <img src={attachment.url} alt={attachment.name} />
+                        ) : (
+                          <span className="etr-expense-preview-thumb-fallback">{attachment.name}</span>
+                        )}
+                      </button>
+                      {!isReadOnlyDetail ? (
+                        <button
+                          type="button"
+                          className="etr-expense-preview-remove"
+                          onClick={() => handleRemoveAttachment(attachment.key)}
+                          aria-label={`Remove ${attachment.name}`}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                      <strong>{attachment.name}</strong>
+                      <span>{attachment.size}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </button>
+                <div className="etr-expense-preview-summary">
+                  <strong>{selectedAttachmentFiles[0]?.name}</strong>
+                  <span>{selectedAttachmentCount} selected</span>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={`etr-expense-preview ${attachmentPreview?.url ? 'is-clickable' : ''}`}
+                onClick={shouldLazyLoadAttachmentPreview ? handleLoadAttachmentPreview : handlePreviewAttachment}
+                disabled={!attachmentPreview?.url || isAttachmentPreviewLoading}
+                aria-label={attachmentPreview?.url ? `View ${attachmentPreview.name}` : 'No attachment preview available'}
+              >
+                {!shouldLazyLoadAttachmentPreview && canRenderAttachmentThumbnail && canRenderAttachmentImage(attachmentPreview) ? (
+                  <img src={attachmentPreview.url} alt={attachmentPreview.name} />
+                ) : (
+                  <div>
+                    <strong>{attachmentPreview?.name || formData.attachment || 'Preview area'}</strong>
+                    <span>
+                      {isAttachmentPreviewLoading
+                        ? 'Loading attachment preview...'
+                        : shouldLazyLoadAttachmentPreview
+                          ? 'Click to load attachment preview.'
+                          : canRenderAttachmentThumbnail
+                            ? 'Click to open image preview.'
+                            : attachmentPreview
+                              ? `${attachmentPreview.type} - ${attachmentPreview.size}`
+                              : `Images only. Max ${MAX_ATTACHMENT_COUNT} files, ${MAX_ATTACHMENT_LABEL} each.`}
+                    </span>
+                  </div>
+                )}
+              </button>
+            )}
             {isAttachmentPreviewLoading ? <small className="etr-expense-upload-note">Loading attachment...</small> : null}
             {!isAttachmentPreviewLoading && attachmentPreviewError ? <small className="etr-expense-upload-error">{attachmentPreviewError}</small> : null}
             {formData.attachment && !isReadOnlyDetail ? (
               <div className="etr-expense-attachment-actions">
-                <button type="button" onClick={handleChooseAttachment}>Change</button>
-                <button type="button" onClick={handleRemoveAttachment}>Remove</button>
+                <button type="button" onClick={handleChooseAttachment}>{selectedAttachmentCount ? 'Add images' : 'Choose images'}</button>
+                <button type="button" onClick={() => handleRemoveAttachment()}>Remove all</button>
               </div>
             ) : null}
           </section>
@@ -1837,22 +2273,47 @@ export default function ExpenseEntryView({
         </aside>
       </div>
 
-      {isAttachmentViewerOpen && attachmentPreview?.url ? (
+      {isAttachmentViewerOpen ? (
         <div className="etr-expense-viewer-backdrop" role="presentation" onClick={() => setIsAttachmentViewerOpen(false)}>
           <section className="etr-expense-viewer" role="dialog" aria-modal="true" aria-label="Attachment preview" onClick={(event) => event.stopPropagation()}>
             <div className="etr-expense-viewer-head">
-              <strong>{attachmentPreview.name}</strong>
-              <button type="button" onClick={() => setIsAttachmentViewerOpen(false)} aria-label="Close attachment preview">Close</button>
+              <strong>{attachmentPreview?.name || 'Loading...'}</strong>
+              <div className="etr-expense-viewer-controls">
+                {selectedAttachmentFiles.length > 1 ? (
+                  <span className="etr-expense-viewer-counter">
+                    {currentPreviewIndex + 1} / {selectedAttachmentFiles.length}
+                  </span>
+                ) : null}
+                <button type="button" onClick={() => setIsAttachmentViewerOpen(false)} aria-label="Close attachment preview">Close</button>
+              </div>
             </div>
-            {attachmentPreview.isImage ? (
-              <img src={attachmentPreview.url} alt={attachmentPreview.name} />
-            ) : (
-              <iframe
-                src={attachmentPreview.url}
-                title={attachmentPreview.name}
-                className="etr-expense-viewer-frame"
-              />
-            )}
+            {isAttachmentPreviewLoading ? (
+              <div className="etr-expense-viewer-loading">
+                <span>Loading attachment...</span>
+              </div>
+            ) : attachmentPreviewError ? (
+              <div className="etr-expense-viewer-error">
+                <span>{attachmentPreviewError}</span>
+              </div>
+            ) : attachmentPreview?.url ? (
+              <>
+                {canRenderAttachmentImage(attachmentPreview) ? (
+                  <img src={attachmentPreview.url} alt={attachmentPreview.name} onError={() => setAttachmentPreviewError('Failed to load image.')} />
+                ) : (
+                  <iframe
+                    src={attachmentPreview.url}
+                    title={attachmentPreview.name}
+                    className="etr-expense-viewer-frame"
+                  />
+                )}
+                {selectedAttachmentFiles.length > 1 ? (
+                  <div className="etr-expense-viewer-nav">
+                    <button type="button" onClick={handlePreviousAttachment} aria-label="Previous attachment">← Previous</button>
+                    <button type="button" onClick={handleNextAttachment} aria-label="Next attachment">Next →</button>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
           </section>
         </div>
       ) : null}
