@@ -117,16 +117,14 @@ function LoginForm({ onLoginSuccess }) {
       const sessionData = buildSessionData(data, selectedProfile, username);
 
       saveAuth(sessionData);
-      const warmupResponse = await fetch(buildApiUrl('/api/cache/warmup'), {
-        headers: {
-          Authorization: `Bearer ${sessionData.accessToken}`,
-        },
-      });
-
-      if (!warmupResponse.ok) {
-        clearAuth();
-        setMessage('Login succeeded, but the database could not be prepared. Please try again.');
-        return;
+      try {
+        await fetch(buildApiUrl('/api/cache/warmup'), {
+          headers: {
+            Authorization: `Bearer ${sessionData.accessToken}`,
+          },
+        });
+      } catch {
+        // Login already succeeded. Keep the session and let screens load their own data.
       }
 
       onLoginSuccess?.(sessionData.user);

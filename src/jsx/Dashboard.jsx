@@ -294,8 +294,44 @@ function formatReminderShortDate(date) {
   });
 }
 
+function toValidDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const date = new Date(value);
+
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  return null;
+}
+
 function createLocalDate(year, monthIndex, day) {
   return new Date(year, monthIndex, day);
+}
+
+function getReimbursementDeadlineDate(reminder) {
+  const explicitDate = toValidDate(reminder?.deadlineDate ?? reminder?.DeadlineDate);
+
+  if (explicitDate) {
+    return explicitDate;
+  }
+
+  const currentDate = new Date();
+  const currentDay = currentDate.getDate();
+  const reminderDay = Number(reminder?.reminderDay ?? reminder?.ReminderDay ?? reminder?.deadlineDay ?? reminder?.DeadlineDay);
+  const reminderType = String(reminder?.reminderType ?? reminder?.ReminderType ?? reminder?.state ?? reminder?.State ?? '').toLowerCase();
+  let deadlineDay = Number.isFinite(reminderDay) ? reminderDay : currentDay;
+
+  if ((reminderType === 'warning' || reminderType === 'reminder') && Number.isFinite(reminderDay)) {
+    deadlineDay = reminderDay === 5 ? 6 : reminderDay === 20 ? 21 : reminderDay;
+  }
+
+  return createLocalDate(currentDate.getFullYear(), currentDate.getMonth(), deadlineDay);
 }
 
 function createReimbursementAlertInfo({
@@ -452,7 +488,7 @@ function ReimbursementDeadlineAlert({ user }) {
       return loginReminder;
     }
 
-    return calculateReimbursementDeadline(new Date());
+    return null;
   }, [loginReminder]);
   const storageKey = useMemo(() => {
     if (!deadlineInfo) {
@@ -460,7 +496,7 @@ function ReimbursementDeadlineAlert({ user }) {
     }
 
     const userKey = getUserDeadlineKey(user);
-    const deadlineId = getLocalDateId(deadlineInfo.deadlineDate);
+    const deadlineId = getLocalDateId(getReimbursementDeadlineDate(deadlineInfo));
 
     return `etr-reimbursement-submitted:${userKey}:${deadlineId}`;
   }, [deadlineInfo, user]);
@@ -486,15 +522,17 @@ function ReimbursementDeadlineAlert({ user }) {
 
   const loginSubmittedStatus = isReimbursementSubmittedFromLogin(user);
   const hasSubmitted = loginSubmittedStatus ?? isSubmitted;
+  const resolvedDeadlineDate = getReimbursementDeadlineDate(deadlineInfo);
+  const submittedMessage = `Submission is marked complete for the ${formatDeadlineDate(resolvedDeadlineDate)} deadline.`;
   const alertInfo = hasSubmitted
     ? {
       ...deadlineInfo,
       state: 'submitted',
       tone: 'green',
       title: 'Reimbursement already submitted',
-      notificationMessage: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
-      emailBody: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
-      message: `Submission is marked complete for the ${formatDeadlineDate(deadlineInfo.deadlineDate)} deadline.`,
+      notificationMessage: submittedMessage,
+      emailBody: submittedMessage,
+      message: submittedMessage,
       badge: 'Submitted',
     }
     : deadlineInfo;
@@ -671,7 +709,6 @@ function DashboardPage({ user, onLogout }) {
   useEffect(() => {
     if (!activeItemId) {
       return;
-      
     }
 
     const hasVisibleActiveItem = searchIndex.some((entry) => entry.id === activeItemId && entry.isSelectable);
