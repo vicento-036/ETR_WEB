@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getToken } from '../services/authStorage';
 import '../css/Journalentry.css';
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
+const JOURNAL_DRAFT_STORAGE_KEY = 'etr.journalEntry.draft';
+const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
+const JOURNAL_ENTRIES_STORAGE_KEY = 'etr.journalEntry.records';
+const JOURNAL_ENTRIES_UPDATED_EVENT = 'etr-journal-entries-updated';
+
+function buildApiUrl(path) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
 
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 6;
@@ -39,7 +51,7 @@ const journalRows = [
   },
   {
     id: 'JE-2026-00016',
-    status: 'Draft',
+    status: 'Pending',
     book: 'MANUAL',
     entryNumber: 'JE-2026-00016',
     entryDate: 'May 17, 2026',
@@ -103,7 +115,7 @@ const journalRows = [
   },
   {
     id: 'JE-2026-00012',
-    status: 'Draft',
+    status: 'Cancelled',
     book: 'MANUAL',
     entryNumber: 'JE-2026-00012',
     entryDate: 'May 13, 2026',
@@ -151,30 +163,53 @@ const journalRows = [
   },
 ];
 
-const initialLines = [
-  {
-    id: 1,
+function createBlankJournalLine(id = Date.now()) {
+  return {
+    id,
     selected: false,
-    accountCode: '6100-001',
-    accountTitle: 'Office Supplies Expense',
-    subsidiary: 'HEAD OFFICE',
-    costCenter: 'ADMIN',
-    debit: '12500.00',
-    credit: '',
-    remarks: 'May supplies accrual',
-  },
-  {
-    id: 2,
-    selected: false,
-    accountCode: '2100-004',
-    accountTitle: 'Accrued Expenses',
-    subsidiary: 'HEAD OFFICE',
-    costCenter: 'ADMIN',
+    accountCode: '',
+    accountTitle: '',
+    subsidiary: '',
+    costCenter: '',
     debit: '',
-    credit: '12500.00',
-    remarks: 'Offsetting liability',
-  },
-];
+    credit: '',
+    remarks: '',
+  };
+}
+
+function createDefaultJournalLines() {
+  const baseId = Date.now();
+
+  return [
+    createBlankJournalLine(baseId),
+    createBlankJournalLine(baseId + 1),
+  ];
+}
+
+function createDefaultJournalHeader() {
+  return {
+    status: '',
+    transactionNo: '',
+    transactionDate: new Date().toISOString().slice(0, 10),
+    ledgerBook: 'GENERAL',
+    referenceType: 'Adjustment',
+    referenceNo: '',
+    company: 'ETR Integrated Systems',
+    remarks: '',
+  };
+}
+
+function createDefaultAuditTrail() {
+  return {
+    created: null,
+    modified: null,
+    postedCancelled: null,
+  };
+}
+
+export function clearJournalDraftStorage() {
+  window.localStorage?.removeItem(JOURNAL_DRAFT_STORAGE_KEY);
+}
 
 const managerColumns = [
   { key: 'status', label: 'Status' },
@@ -210,8 +245,32 @@ function formatMoney(value) {
   });
 }
 
+function normalizeJournalStatus(status) {
+  const normalized = String(status || '').trim();
+
+  if (normalized === 'Draft') {
+    return 'Pending';
+  }
+
+  if (normalized === 'Pending' || normalized === 'Posted' || normalized === 'Cancelled') {
+    return normalized;
+  }
+
+  return '';
+}
+
 function getStatusClass(status) {
-  return `is-${String(status || '').toLowerCase().replace(/\s+/g, '-')}`;
+  if (status === 'Unsaved') {
+    return 'is-unsaved';
+  }
+
+  const normalized = normalizeJournalStatus(status);
+
+  if (!normalized) {
+    return 'is-unsaved';
+  }
+
+  return `is-${normalized.toLowerCase()}`;
 }
 
 function getJournalSortValue(row, column) {
@@ -234,16 +293,351 @@ function getVisiblePages(currentPage, totalPages) {
   return Array.from({ length: visibleCount }, (_, index) => start + index);
 }
 
-function getUserDisplayName(user) {
-  return user?.employeeName
-    || user?.EmployeeName
-    || user?.fullName
-    || user?.FullName
-    || user?.name
-    || user?.Name
-    || user?.username
-    || user?.Username
-    || 'etradmin';
+function getUserField(user, fieldNames) {
+  if (!user) {
+    return '';
+  }
+
+  for (const fieldName of fieldNames) {
+    const value = user[fieldName];
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return '';
+}
+
+function isPlaceholderAuditName(name) {
+  return /^etr\s+etr$|^etr,\s*etr$/i.test(String(name || '').trim());
+}
+
+function getAuditEmployeeName(user) {
+  if (!user) {
+    return 'Executive Service Account';
+  }
+
+  const employeeName = getUserField(user, [
+    'employeeName',
+    'EmployeeName',
+    'fullName',
+    'full_name',
+    'FullName',
+    'name',
+    'displayName',
+    'Name',
+  ]);
+
+  if (employeeName && !isPlaceholderAuditName(employeeName)) {
+    return employeeName;
+  }
+
+  const lastName = getUserField(user, ['lastName', 'lastname', 'LastName', 'LASTNAME']);
+  const firstName = getUserField(user, ['firstName', 'firstname', 'FirstName', 'FIRSTNAME']);
+  const middleName = getUserField(user, ['middleName', 'middlename', 'MiddleName', 'MIDDLENAME']);
+
+  if (lastName && firstName) {
+    const composed = [lastName, [firstName, middleName].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+
+    if (!isPlaceholderAuditName(composed)) {
+      return composed;
+    }
+  }
+
+  return getUserField(user, ['username', 'Username']) || 'Executive Service Account';
+}
+
+function formatAuditDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const datePart = date.toLocaleDateString('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+
+  return `${datePart} ${timePart}`;
+}
+
+function formatAuditStamp(name, value) {
+  const displayName = String(name || '').trim();
+  const displayDate = formatAuditDateTime(value);
+
+  if (!displayName && !displayDate) {
+    return '-';
+  }
+
+  if (!displayDate) {
+    return displayName;
+  }
+
+  return `${displayName}\n${displayDate}`;
+}
+
+function formatAuditStampFromRecord(record) {
+  if (!record?.name || !record?.at) {
+    return '-';
+  }
+
+  return formatAuditStamp(record.name, record.at);
+}
+
+function resolveAuditStamp(record, fallbackName, fallbackDate) {
+  if (record?.name && record?.at) {
+    return formatAuditStamp(record.name, record.at);
+  }
+
+  if (fallbackName) {
+    return formatAuditStamp(fallbackName, fallbackDate);
+  }
+
+  return '-';
+}
+
+function loadSavedJournalEntries() {
+  try {
+    const rawEntries = window.localStorage?.getItem(JOURNAL_ENTRIES_STORAGE_KEY);
+
+    if (!rawEntries) {
+      return [];
+    }
+
+    const entries = JSON.parse(rawEntries);
+
+    if (!Array.isArray(entries)) {
+      return [];
+    }
+
+    return entries.map((entry) => ({
+      ...entry,
+      status: normalizeJournalStatus(entry.status),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function loadJournalEntries() {
+  const savedEntries = loadSavedJournalEntries();
+  const savedIds = new Set(savedEntries.map((entry) => entry.id));
+
+  return [
+    ...savedEntries,
+    ...journalRows.filter((entry) => !savedIds.has(entry.id)),
+  ];
+}
+
+function saveSavedJournalEntries(entries) {
+  window.localStorage?.setItem(JOURNAL_ENTRIES_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function notifyJournalEntriesUpdated() {
+  window.dispatchEvent(new Event(JOURNAL_ENTRIES_UPDATED_EVENT));
+}
+
+function buildManagerRowFromEntry({ header, lines, transactionNo }) {
+  const debit = lines.reduce((sum, line) => sum + parseAmount(line.debit), 0);
+  const credit = lines.reduce((sum, line) => sum + parseAmount(line.credit), 0);
+
+  return {
+    id: transactionNo,
+    status: normalizeJournalStatus(header.status),
+    book: header.ledgerBook,
+    entryNumber: transactionNo,
+    entryDate: formatDisplayDate(header.transactionDate),
+    referenceNumber: header.referenceNo,
+    referenceType: header.referenceType,
+    remarks: header.remarks,
+    debitTotal: debit,
+    creditTotal: credit,
+  };
+}
+
+function upsertJournalEntry(row) {
+  const savedEntries = loadSavedJournalEntries();
+  const nextEntries = [
+    row,
+    ...savedEntries.filter((entry) => entry.id !== row.id),
+  ];
+
+  saveSavedJournalEntries(nextEntries);
+  notifyJournalEntriesUpdated();
+}
+
+function getNextJournalSequence() {
+  const storage = typeof window !== 'undefined' ? window.localStorage : null;
+  const current = Number(storage?.getItem(JOURNAL_SEQUENCE_STORAGE_KEY) || '0');
+  const next = current + 1;
+
+  storage?.setItem(JOURNAL_SEQUENCE_STORAGE_KEY, String(next));
+
+  return next;
+}
+
+function generateJournalTransactionNo(transactionDate) {
+  const date = transactionDate ? new Date(transactionDate) : new Date();
+  const stamp = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = stamp.getFullYear();
+  const month = String(stamp.getMonth() + 1).padStart(2, '0');
+  const day = String(stamp.getDate()).padStart(2, '0');
+  const sequence = String(getNextJournalSequence()).padStart(4, '0');
+
+  return `JE-${year}-${month}${day}-${sequence}`;
+}
+
+function formatDisplayDate(value) {
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function validateJournalEntry(header, lines, { requireBalanced = false } = {}) {
+  const errors = [];
+
+  if (!header.transactionDate) {
+    errors.push('Transaction date is required.');
+  }
+
+  if (!String(header.referenceNo || '').trim()) {
+    errors.push('Reference no. is required.');
+  }
+
+  if (!String(header.company || '').trim()) {
+    errors.push('Company is required.');
+  }
+
+  const activeLines = lines.filter((line) => (
+    String(line.accountCode || '').trim() || String(line.accountTitle || '').trim()
+  ));
+
+  if (activeLines.length === 0) {
+    errors.push('Add at least one journal line with an account.');
+  }
+
+  activeLines.forEach((line, index) => {
+    const debit = parseAmount(line.debit);
+    const credit = parseAmount(line.credit);
+
+    if (debit > 0 && credit > 0) {
+      errors.push(`Line ${index + 1}: enter either debit or credit, not both.`);
+    }
+
+    if (debit <= 0 && credit <= 0) {
+      errors.push(`Line ${index + 1}: enter a debit or credit amount.`);
+    }
+  });
+
+  if (requireBalanced) {
+    const debit = lines.reduce((sum, line) => sum + parseAmount(line.debit), 0);
+    const credit = lines.reduce((sum, line) => sum + parseAmount(line.credit), 0);
+
+    if (Math.abs(debit - credit) >= 0.01) {
+      errors.push('Debit and credit totals must match before posting.');
+    }
+  }
+
+  return errors;
+}
+
+function printJournalVoucher({ header, lines, totals, auditTrail, auditUserName }) {
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+
+  if (!printWindow) {
+    throw new Error('Pop-up blocked. Allow pop-ups to print the voucher.');
+  }
+
+  const lineRows = lines
+    .filter((line) => line.accountCode || line.accountTitle)
+    .map((line) => `
+      <tr>
+        <td>${line.accountCode || '-'}</td>
+        <td>${line.accountTitle || '-'}</td>
+        <td>${line.subsidiary || '-'}</td>
+        <td>${line.costCenter || '-'}</td>
+        <td class="num">${line.debit ? formatMoney(parseAmount(line.debit)) : ''}</td>
+        <td class="num">${line.credit ? formatMoney(parseAmount(line.credit)) : ''}</td>
+        <td>${line.remarks || ''}</td>
+      </tr>
+    `)
+    .join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Journal Voucher ${header.transactionNo || 'Draft'}</title>
+    <style>
+      body { font-family: Arial, sans-serif; color: #12314e; margin: 24px; }
+      h1 { margin: 0 0 6px; font-size: 20px; }
+      .meta { margin-bottom: 18px; font-size: 12px; line-height: 1.6; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #b7c9dc; padding: 8px; text-align: left; }
+      th { background: #eaf4fd; text-transform: uppercase; font-size: 11px; }
+      .num { text-align: right; }
+      .totals { margin-top: 14px; display: grid; gap: 6px; max-width: 280px; margin-left: auto; }
+      .totals div { display: flex; justify-content: space-between; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Journal Voucher</h1>
+    <div class="meta">
+      <div><strong>Transaction No.:</strong> ${header.transactionNo || 'Draft'}</div>
+      <div><strong>Date:</strong> ${formatDisplayDate(header.transactionDate)}</div>
+      <div><strong>Ledger Book:</strong> ${header.ledgerBook}</div>
+      <div><strong>Reference:</strong> ${header.referenceType} / ${header.referenceNo}</div>
+      <div><strong>Company:</strong> ${header.company}</div>
+      <div><strong>Status:</strong> ${header.status}</div>
+      <div><strong>Prepared by:</strong> ${auditUserName}</div>
+      <div><strong>Posted by:</strong> ${auditTrail.postedCancelled?.name || '-'}</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Account Code</th>
+          <th>Account Title</th>
+          <th>Subsidiary</th>
+          <th>Cost Center</th>
+          <th>Debit</th>
+          <th>Credit</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lineRows || '<tr><td colspan="7">No journal lines</td></tr>'}
+      </tbody>
+    </table>
+    <div class="totals">
+      <div><span>Debit Total</span><span>${formatMoney(totals.debit)}</span></div>
+      <div><span>Credit Total</span><span>${formatMoney(totals.credit)}</span></div>
+      <div><span>Variance</span><span>${formatMoney(totals.variance)}</span></div>
+    </div>
+    <p style="margin-top:18px;font-size:12px;">${header.remarks || ''}</p>
+  </body>
+</html>`;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
 }
 
 function JournalMetric({ label, value, tone = '' }) {
@@ -259,18 +653,32 @@ export function JournalEntryManagerView({ onNewEntry }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'entryDate', direction: 'desc' });
+  const [entryRows, setEntryRows] = useState(() => loadJournalEntries());
+
+  useEffect(() => {
+    const refreshRows = () => {
+      setEntryRows(loadJournalEntries());
+    };
+
+    refreshRows();
+    window.addEventListener(JOURNAL_ENTRIES_UPDATED_EVENT, refreshRows);
+
+    return () => {
+      window.removeEventListener(JOURNAL_ENTRIES_UPDATED_EVENT, refreshRows);
+    };
+  }, []);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
     if (!normalizedQuery) {
-      return journalRows;
+      return entryRows;
     }
 
-    return journalRows.filter((row) => (
+    return entryRows.filter((row) => (
       managerColumns.some((column) => String(row[column.key] || '').toLowerCase().includes(normalizedQuery))
     ));
-  }, [query]);
+  }, [entryRows, query]);
 
   const sortedRows = useMemo(() => {
     const column = managerColumns.find((item) => item.key === sortConfig.key);
@@ -419,18 +827,53 @@ export function JournalEntryManagerView({ onNewEntry }) {
   );
 }
 
-function JournalEntryView({ user }) {
-  const [lines, setLines] = useState(initialLines);
-  const auditUserName = getUserDisplayName(user);
-  const [header, setHeader] = useState({
-    transactionNo: '',
-    transactionDate: '2026-05-19',
-    ledgerBook: 'GENERAL',
-    referenceType: 'Adjustment',
-    referenceNo: 'JV-0519-018',
-    company: 'ETR Integrated Systems',
-    remarks: 'Month-end accrual adjustment',
-  });
+function JournalEntryView({ user, onSaved }) {
+  const [employeeInfo, setEmployeeInfo] = useState(null);
+  const [auditTrail, setAuditTrail] = useState(createDefaultAuditTrail);
+  const [previewAuditAt] = useState(() => new Date());
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [header, setHeader] = useState(createDefaultJournalHeader);
+  const [lines, setLines] = useState(createDefaultJournalLines);
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadCurrentEmployee = async () => {
+      try {
+        const response = await fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          return;
+        }
+
+        const employee = data?.employee || data?.data || data;
+
+        if (employee && typeof employee === 'object') {
+          setEmployeeInfo(employee);
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setEmployeeInfo(null);
+        }
+      }
+    };
+
+    loadCurrentEmployee();
+
+    return () => controller.abort();
+  }, []);
+
+  const auditUserName = getAuditEmployeeName(employeeInfo || user);
+  const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
+  const modifiedAuditStamp = resolveAuditStamp(auditTrail.modified, auditUserName, previewAuditAt);
+  const postedCancelledAuditStamp = formatAuditStampFromRecord(auditTrail.postedCancelled);
 
   const totals = useMemo(() => {
     const debit = lines.reduce((sum, line) => sum + parseAmount(line.debit), 0);
@@ -446,6 +889,126 @@ function JournalEntryView({ user }) {
   const isBalanced = Math.abs(totals.variance) < 0.01;
   const varianceLabel = formatMoney(Math.abs(totals.variance));
   const signedVarianceLabel = totals.variance < 0 ? `-${varianceLabel}` : varianceLabel;
+  const normalizedStatus = normalizeJournalStatus(header.status);
+  const displayStatus = header.transactionNo ? (normalizedStatus || 'Pending') : 'Unsaved';
+  const isPosted = normalizedStatus === 'Posted';
+  const isCancelled = normalizedStatus === 'Cancelled';
+  const isLocked = isPosted || isCancelled;
+
+  const clearActionFeedback = () => {
+    setActionMessage('');
+    setActionError('');
+  };
+
+  const handleSaveDraft = async () => {
+    clearActionFeedback();
+
+    const validationErrors = validateJournalEntry(header, lines);
+
+    if (validationErrors.length > 0) {
+      setActionError(validationErrors.join(' '));
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 350);
+      });
+
+      const transactionNo = header.transactionNo.trim() || generateJournalTransactionNo(header.transactionDate);
+      const nextHeader = {
+        ...header,
+        status: 'Pending',
+        transactionNo,
+      };
+
+      upsertJournalEntry(buildManagerRowFromEntry({ header: nextHeader, lines, transactionNo }));
+      clearJournalDraftStorage();
+      onSaved?.();
+    } catch (error) {
+      setActionError(error.message || 'Unable to save draft.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePostToLedger = async () => {
+    clearActionFeedback();
+
+    if (isPosted) {
+      setActionError('This journal entry is already posted.');
+      return;
+    }
+
+    if (isCancelled) {
+      setActionError('This journal entry is cancelled and cannot be posted.');
+      return;
+    }
+
+    const validationErrors = validateJournalEntry(header, lines, { requireBalanced: true });
+
+    if (validationErrors.length > 0) {
+      setActionError(validationErrors.join(' '));
+      return;
+    }
+
+    const confirmed = window.confirm('Post this journal entry to the ledger?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 350);
+      });
+
+      const transactionNo = header.transactionNo.trim() || generateJournalTransactionNo(header.transactionDate);
+      const nextHeader = {
+        ...header,
+        status: 'Posted',
+        transactionNo,
+      };
+
+      upsertJournalEntry(buildManagerRowFromEntry({ header: nextHeader, lines, transactionNo }));
+      clearJournalDraftStorage();
+      onSaved?.();
+    } catch (error) {
+      setActionError(error.message || 'Unable to post journal entry.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePrintVoucher = () => {
+    clearActionFeedback();
+
+    const validationErrors = validateJournalEntry(header, lines);
+
+    if (validationErrors.length > 0) {
+      setActionError(validationErrors.join(' '));
+      return;
+    }
+
+    try {
+      printJournalVoucher({
+        header,
+        lines,
+        totals,
+        auditTrail,
+        auditUserName,
+      });
+      setActionMessage(header.transactionNo
+        ? `Print preview opened for ${header.transactionNo}.`
+        : 'Print preview opened for unsaved draft voucher.');
+    } catch (error) {
+      setActionError(error.message || 'Unable to print voucher.');
+    }
+  };
 
   const updateHeader = (field, value) => {
     setHeader((current) => ({ ...current, [field]: value }));
@@ -491,11 +1054,30 @@ function JournalEntryView({ user }) {
         </div>
 
         <div className="etr-journal-actions">
-          <button type="button" className="is-primary">Save Draft</button>
-          <button type="button">Post to Ledger</button>
-          <button type="button">Print Voucher</button>
+          <button
+            type="button"
+            className="is-primary"
+            onClick={handleSaveDraft}
+            disabled={isSubmitting || isLocked}
+          >
+            {isSubmitting ? 'Saving...' : 'Save Draft'}
+          </button>
+          <button
+            type="button"
+            onClick={handlePostToLedger}
+            disabled={isSubmitting || isLocked || !isBalanced}
+            title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+          >
+            {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+          </button>
+          <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting}>
+            Print Voucher
+          </button>
         </div>
       </div>
+
+      {actionMessage ? React.createElement('div', { className: 'etr-journal-action-message' }, actionMessage) : null}
+      {actionError ? React.createElement('div', { className: 'etr-journal-action-message is-error' }, actionError) : null}
 
       <div className="etr-journal-form-shell">
         <div className="etr-journal-content-column">
@@ -559,29 +1141,26 @@ function JournalEntryView({ user }) {
               <section className="etr-journal-card">
                 <div className="etr-journal-card-head">
                   <h2>Audit</h2>
-                  <span>User trail</span>
+                  <span>User trail and cancellation</span>
                 </div>
                 <div className="etr-journal-audit-grid">
                   <label className="etr-journal-field">
                     <span>Created By</span>
-                    <input value={auditUserName} readOnly />
+                    <textarea value={createdAuditStamp} rows={2} readOnly />
                   </label>
                   <label className="etr-journal-field">
                     <span>Last Modified By</span>
-                    <input value={auditUserName} readOnly />
+                    <textarea value={modifiedAuditStamp} rows={2} readOnly />
                   </label>
                   <label className="etr-journal-field">
                     <span>Posted/Cancelled By</span>
-                    <input value="" readOnly placeholder="-" />
+                    <textarea value={postedCancelledAuditStamp} rows={2} readOnly />
+                  </label>
+                  <label className="etr-journal-field">
+                    <span>Cancellation Remarks</span>
+                    <textarea rows={3} placeholder="No cancellation remarks" />
                   </label>
                 </div>
-              </section>
-
-              <section className="etr-journal-card etr-journal-cancel-card">
-                <label className="etr-journal-field">
-                  <span>Cancellation Remarks</span>
-                  <textarea rows={3} placeholder="No cancellation remarks" />
-                </label>
               </section>
             </div>
           </div>
@@ -589,35 +1168,45 @@ function JournalEntryView({ user }) {
         </div>
 
         <aside className="etr-journal-side-stack">
-          <section className="etr-journal-card etr-journal-summary-card">
+          <section className={`etr-journal-card etr-journal-status-card ${getStatusClass(displayStatus)}`}>
+            <div className="etr-journal-status-card-body">
+              <div className="etr-journal-status-copy">
+                <strong>Status</strong>
+                <small>Current posting state</small>
+              </div>
+              <span className={`etr-journal-status-pill ${getStatusClass(displayStatus)}`}>{displayStatus}</span>
+            </div>
+          </section>
+
+          <section className="etr-journal-card etr-journal-amount-card">
             <div className="etr-journal-card-head">
               <h2>Amount</h2>
               <span>Auto-computed totals</span>
             </div>
-            <label className="etr-journal-field">
-              <span>Debit Total</span>
-              <input value={formatMoney(totals.debit)} readOnly />
-            </label>
-            <label className="etr-journal-field">
-              <span>Credit Total</span>
-              <input value={formatMoney(totals.credit)} readOnly />
-            </label>
-            <label className="etr-journal-field">
-              <span>Variance</span>
-              <input className={isBalanced ? 'is-balanced-total' : 'is-warning-total'} value={signedVarianceLabel} readOnly />
-            </label>
-          </section>
-
-          <section className="etr-journal-card etr-journal-side-remarks-card">
-            <div className="etr-journal-card-head">
-              <h2>Remarks</h2>
-              <span>Supporting notes</span>
+            <dl className="etr-journal-amount-metrics">
+              <div>
+                <dt>Debit Total</dt>
+                <dd>{formatMoney(totals.debit)}</dd>
+              </div>
+              <div>
+                <dt>Credit Total</dt>
+                <dd>{formatMoney(totals.credit)}</dd>
+              </div>
+              <div className={isBalanced ? 'is-balanced' : 'is-warning'}>
+                <dt>Variance</dt>
+                <dd>{signedVarianceLabel}</dd>
+              </div>
+            </dl>
+            <div className={`etr-journal-balance-note ${isBalanced ? 'is-balanced' : 'is-warning'}`}>
+              <strong>{isBalanced ? 'Balanced entry' : 'Out of balance'}</strong>
+              <span>
+                {isBalanced
+                  ? 'Debit and credit totals match. Ready for posting review.'
+                  : 'Adjust journal lines until variance returns to zero.'}
+              </span>
             </div>
-
-            <label className="etr-journal-field">
-              <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} />
-            </label>
           </section>
+
         </aside>
 
         <section className="etr-journal-table-panel">
@@ -667,6 +1256,11 @@ function JournalEntryView({ user }) {
               </tbody>
             </table>
           </div>
+
+          <label className="etr-journal-field etr-journal-details-remarks">
+            <span>Remarks</span>
+            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} />
+          </label>
         </section>
       </div>
     </div>

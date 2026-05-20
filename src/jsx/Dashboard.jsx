@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DailyExpenseManager from './Dailyexpensemanager.jsx';
 import ExpenseEntryView from './Dailyexpense.jsx';
-import JournalEntryView, { JournalEntryManagerView } from './Journalentry.jsx';
+import JournalEntryView, { JournalEntryManagerView, clearJournalDraftStorage } from './Journalentry.jsx';
 import WithdrawalEntry from './WithdrawalEntry.jsx';
 
 const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}';
@@ -564,7 +564,16 @@ function ReimbursementDeadlineAlert({ user }) {
   );
 }
 
-function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onOpenExpense, onBackToManager }) {
+function DashboardContent({
+  activeItemId,
+  user,
+  selectedExpense,
+  journalEntryKey,
+  onJournalEntryKeyBump,
+  onNavigate,
+  onOpenExpense,
+  onBackToManager,
+}) {
   if (activeItemId === 'daily-expense-manager') {
     return (
       <DailyExpenseManager
@@ -586,11 +595,26 @@ function DashboardContent({ activeItemId, user, selectedExpense, onNavigate, onO
   }
 
   if (activeItemId === 'journal-manager') {
-    return <JournalEntryManagerView user={user} onNewEntry={() => onNavigate('journal-entry')} />;
+    return (
+      <JournalEntryManagerView
+        user={user}
+        onNewEntry={() => {
+          clearJournalDraftStorage();
+          onJournalEntryKeyBump();
+          onNavigate('journal-entry');
+        }}
+      />
+    );
   }
 
   if (activeItemId === 'journal-entry') {
-    return <JournalEntryView user={user} />;
+    return (
+      <JournalEntryView
+        key={journalEntryKey}
+        user={user}
+        onSaved={() => onNavigate('journal-manager')}
+      />
+    );
   }
 
   if (activeItemId === 'withdrawal-entry') {
@@ -659,6 +683,7 @@ function DashboardPage({ user, onLogout }) {
   const [isSidebarDrawerOpen, setIsSidebarDrawerOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
+  const [journalEntryKey, setJournalEntryKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openSections, setOpenSections] = useState(() => getClosedSidebarState(filteredSidebarSections));
@@ -1038,6 +1063,8 @@ function DashboardPage({ user, onLogout }) {
                 activeItemId={activeItemId}
                 user={user}
                 selectedExpense={selectedExpense}
+                journalEntryKey={journalEntryKey}
+                onJournalEntryKeyBump={() => setJournalEntryKey((current) => current + 1)}
                 onNavigate={navigateToModule}
                 onOpenExpense={setSelectedExpense}
                 onBackToManager={() => {
