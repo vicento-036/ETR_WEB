@@ -554,6 +554,7 @@ function ReimbursementDeadlineAlert({ user }) {
         <div className="etr-reimbursement-alert-copy">
           <strong>{alertInfo.title}</strong>
           <p>{alertInfo.notificationMessage}</p>
+          {alertInfo.emailSkippedOutsideSchedule ? <p>Outside the scheduled send hours, the email is not sent.</p> : null}
         </div>
 
         <button type="button" className="etr-reimbursement-close-button" onClick={handleDismiss} aria-label="Dismiss reimbursement notification">
