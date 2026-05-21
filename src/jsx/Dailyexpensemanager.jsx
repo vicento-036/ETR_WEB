@@ -1454,6 +1454,16 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const approvedRows = useMemo(() => rows.filter((row) => normalizeExpenseStatusValue(row.statusValue ?? row.status) === 1), [rows]);
   const filteredReportRows = useMemo(() => {
     return approvedRows.filter((row) => {
+      if (currentEmployeeId > 0) {
+        const rowEmployeeId = Number(
+          row.employeeId || row.employeeID || row.EmployeeID || row.EmployeeId || 0,
+        );
+
+        if (rowEmployeeId > 0 && rowEmployeeId !== currentEmployeeId) {
+          return false;
+        }
+      }
+
       const rowDate = getReportFilterDateInput(row);
 
       if (!rowDate) {
@@ -1470,7 +1480,11 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
       return true;
     });
-  }, [approvedRows, dateFrom, dateTo]);
+  }, [approvedRows, currentEmployeeId, dateFrom, dateTo]);
+
+  const getSelectedExpenseIds = () => filteredReportRows
+    .map((row) => Number(row.expenseId || row.expenseID || row.ExpenseID || row.ExpenseId || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
   const grandTotal = filteredReportRows.reduce((sum, row) => sum + parseMoney(row.totalValue ?? row.total), 0);
   const dateRangeLabel = `${dateFrom ? formatDate(dateFrom) : 'Start'} - ${dateTo ? formatDate(dateTo) : 'End'}`;
   const printReportPages = useMemo(() => chunkRowsForPrint(filteredReportRows), [filteredReportRows]);
@@ -1578,10 +1592,21 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
   const loadErSummaryRows = async () => {
     const token = getToken();
+
+    if (!currentEmployeeId) {
+      throw new Error('Unable to determine the current employee for expense report PDF summary.');
+    }
+
+    const expenseIds = getSelectedExpenseIds();
     const query = new URLSearchParams({
       fromDate: dateFrom,
       toDate: dateTo,
+      employeeId: String(currentEmployeeId),
     });
+
+    if (expenseIds.length > 0) {
+      query.set('expenseIds', expenseIds.join(','));
+    }
 
     const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT}?${query.toString()}`), {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1614,6 +1639,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         toDate: dateTo,
         erNo,
         description: purpose || 'Reimbursement',
+        expenseIDs: getSelectedExpenseIds(),
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -1630,9 +1656,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     if (!currentEmployeeId) {
       throw new Error('Unable to determine the current employee for expense report finalization.');
     }
-    const expenseIds = filteredReportRows
-      .map((row) => Number(row.expenseId))
-      .filter((value) => Number.isFinite(value) && value > 0);
+    const expenseIds = getSelectedExpenseIds();
     const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_FINALIZE_ENDPOINT), {
       method: 'POST',
       headers: {
@@ -1674,6 +1698,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         toDate: dateTo,
         erNo,
         description: purpose || 'Reimbursement',
+        expenseIDs: getSelectedExpenseIds(),
         ...(resolvedBookId ? { bookId: Number(resolvedBookId) } : {}),
       }),
     });
