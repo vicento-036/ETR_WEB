@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getToken } from '../services/authStorage';
+import { clearJournalDraftStorage } from '../services/journalDraftStorage';
 import '../css/Journalentry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
@@ -8,11 +9,9 @@ const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
+const JOURNAL_ENTRY_ENDPOINT = '/api/journal-entry';
 const JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT = '/api/journal-entry/daily-expense';
-const JOURNAL_DRAFT_STORAGE_KEY = 'etr.journalEntry.draft';
 const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
-const JOURNAL_ENTRIES_STORAGE_KEY = 'etr.journalEntry.records';
-const JOURNAL_ENTRIES_UPDATED_EVENT = 'etr-journal-entries-updated';
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -20,153 +19,6 @@ function buildApiUrl(path) {
 
 const MANAGER_PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGE_BUTTONS = 6;
-
-const journalRows = [
-  {
-    id: 'JE-2026-00018',
-    status: 'Pending',
-    book: 'GENERAL',
-    entryNumber: 'JE-2026-00018',
-    entryDate: 'May 19, 2026',
-    referenceNumber: 'JV-0519-018',
-    referenceType: 'Adjustment',
-    createdBy: 'etradmin',
-    createdDate: 'May 19, 2026 08:12 AM',
-    modifiedBy: 'etradmin',
-    modifiedDate: 'May 19, 2026 08:18 AM',
-    remarks: 'Month-end accrual adjustment',
-    debitTotal: 12500,
-    creditTotal: 12500,
-  },
-  {
-    id: 'JE-2026-00017',
-    status: 'Posted',
-    book: 'GENERAL',
-    entryNumber: 'JE-2026-00017',
-    entryDate: 'May 18, 2026',
-    referenceNumber: 'OR-20381',
-    referenceType: 'Reclass',
-    createdBy: 'finance01',
-    createdDate: 'May 18, 2026 02:25 PM',
-    modifiedBy: 'finance01',
-    modifiedDate: 'May 18, 2026 03:02 PM',
-    remarks: 'Bank charge reclassification',
-    debitTotal: 2480,
-    creditTotal: 2480,
-  },
-  {
-    id: 'JE-2026-00016',
-    status: 'Pending',
-    book: 'MANUAL',
-    entryNumber: 'JE-2026-00016',
-    entryDate: 'May 17, 2026',
-    referenceNumber: 'AP-14832',
-    referenceType: 'Accrual',
-    createdBy: 'acctg02',
-    createdDate: 'May 17, 2026 10:44 AM',
-    modifiedBy: 'acctg02',
-    modifiedDate: 'May 17, 2026 11:01 AM',
-    remarks: 'Utilities accrual',
-    debitTotal: 8300,
-    creditTotal: 7600,
-  },
-  {
-    id: 'JE-2026-00015',
-    status: 'Posted',
-    book: 'ADJUSTING',
-    entryNumber: 'JE-2026-00015',
-    entryDate: 'May 16, 2026',
-    referenceNumber: 'JV-0516-015',
-    referenceType: 'Manual Voucher',
-    createdBy: 'finance01',
-    createdDate: 'May 16, 2026 04:10 PM',
-    modifiedBy: 'finance01',
-    modifiedDate: 'May 16, 2026 04:32 PM',
-    remarks: 'Depreciation adjustment',
-    debitTotal: 18400,
-    creditTotal: 18400,
-  },
-  {
-    id: 'JE-2026-00014',
-    status: 'Pending',
-    book: 'GENERAL',
-    entryNumber: 'JE-2026-00014',
-    entryDate: 'May 15, 2026',
-    referenceNumber: 'JV-0515-014',
-    referenceType: 'Accrual',
-    createdBy: 'acctg02',
-    createdDate: 'May 15, 2026 01:25 PM',
-    modifiedBy: 'acctg02',
-    modifiedDate: 'May 15, 2026 01:46 PM',
-    remarks: 'Freight accrual',
-    debitTotal: 6900,
-    creditTotal: 6900,
-  },
-  {
-    id: 'JE-2026-00013',
-    status: 'Posted',
-    book: 'GENERAL',
-    entryNumber: 'JE-2026-00013',
-    entryDate: 'May 14, 2026',
-    referenceNumber: 'OR-20302',
-    referenceType: 'Reclass',
-    createdBy: 'etradmin',
-    createdDate: 'May 14, 2026 09:50 AM',
-    modifiedBy: 'etradmin',
-    modifiedDate: 'May 14, 2026 10:04 AM',
-    remarks: 'Collection clearing reclass',
-    debitTotal: 31250,
-    creditTotal: 31250,
-  },
-  {
-    id: 'JE-2026-00012',
-    status: 'Cancelled',
-    book: 'MANUAL',
-    entryNumber: 'JE-2026-00012',
-    entryDate: 'May 13, 2026',
-    referenceNumber: 'AP-14790',
-    referenceType: 'Adjustment',
-    createdBy: 'acctg03',
-    createdDate: 'May 13, 2026 03:18 PM',
-    modifiedBy: 'acctg03',
-    modifiedDate: 'May 13, 2026 03:20 PM',
-    remarks: 'Supplier balance adjustment',
-    debitTotal: 5450,
-    creditTotal: 5000,
-  },
-  {
-    id: 'JE-2026-00011',
-    status: 'Posted',
-    book: 'ADJUSTING',
-    entryNumber: 'JE-2026-00011',
-    entryDate: 'May 12, 2026',
-    referenceNumber: 'JV-0512-011',
-    referenceType: 'Manual Voucher',
-    createdBy: 'finance01',
-    createdDate: 'May 12, 2026 11:08 AM',
-    modifiedBy: 'finance01',
-    modifiedDate: 'May 12, 2026 11:32 AM',
-    remarks: 'Inventory variance correction',
-    debitTotal: 9210,
-    creditTotal: 9210,
-  },
-  {
-    id: 'JE-2026-00010',
-    status: 'Pending',
-    book: 'GENERAL',
-    entryNumber: 'JE-2026-00010',
-    entryDate: 'May 11, 2026',
-    referenceNumber: 'JV-0511-010',
-    referenceType: 'Accrual',
-    createdBy: 'acctg02',
-    createdDate: 'May 11, 2026 05:41 PM',
-    modifiedBy: 'acctg02',
-    modifiedDate: 'May 11, 2026 05:55 PM',
-    remarks: 'Professional fees accrual',
-    debitTotal: 15000,
-    creditTotal: 15000,
-  },
-];
 
 function createBlankJournalLine(id = Date.now()) {
   return {
@@ -214,10 +66,6 @@ function createDefaultAuditTrail() {
     modified: null,
     postedCancelled: null,
   };
-}
-
-export function clearJournalDraftStorage() {
-  window.localStorage?.removeItem(JOURNAL_DRAFT_STORAGE_KEY);
 }
 
 const managerColumns = [
@@ -417,6 +265,36 @@ function getReferenceOptionLabel(row) {
   return [row.referenceNo, row.employeeName, row.documentNo].filter(Boolean).join(' - ');
 }
 
+function normalizeApiJournalEntry(row, bookRows = []) {
+  const journalEntryId = Number(row?.journalEntryID ?? row?.journalEntryId ?? 0);
+  const entryNumber = getField(row, ['entryNumber', 'EntryNumber']);
+  const entryDate = row?.entryDate ?? row?.EntryDate ?? '';
+  const referenceNo = getField(row, ['referenceNo', 'ReferenceNo']);
+  const referenceTypeLabel = getField(row, ['referenceTypeLabel', 'ReferenceTypeLabel']) || 'Journal Entry';
+  const statusLabel = getField(row, ['statusLabel', 'StatusLabel']) || 'Pending';
+  const bookId = getField(row, ['bookId', 'BookID', 'BookId']);
+  const mappedBook = findBook(bookRows, bookId);
+  const bookLabel = mappedBook?.display
+    || getField(row, ['ledgerBook', 'LedgerBook', 'bookCode', 'BookCode', 'bookDescription', 'BookDescription'])
+    || (referenceTypeLabel === 'Journal Entry' ? 'Journal Voucher' : '');
+
+  return {
+    id: journalEntryId || entryNumber || referenceNo,
+    journalEntryId,
+    status: statusLabel,
+    book: bookLabel || bookId,
+    entryNumber,
+    entryDate: formatDisplayDate(entryDate),
+    entryDateValue: entryDate,
+    referenceNumber: referenceNo,
+    referenceType: referenceTypeLabel,
+    remarks: getField(row, ['remarks', 'Remarks']),
+    debitTotal: Number(row?.debitTotal ?? row?.DebitTotal ?? 0),
+    creditTotal: Number(row?.creditTotal ?? row?.CreditTotal ?? 0),
+    raw: row,
+  };
+}
+
 function normalizeJournalStatus(status) {
   const normalized = String(status || '').trim();
 
@@ -575,76 +453,6 @@ function resolveAuditStamp(record, fallbackName, fallbackDate) {
   }
 
   return '-';
-}
-
-function loadSavedJournalEntries() {
-  try {
-    const rawEntries = window.localStorage?.getItem(JOURNAL_ENTRIES_STORAGE_KEY);
-
-    if (!rawEntries) {
-      return [];
-    }
-
-    const entries = JSON.parse(rawEntries);
-
-    if (!Array.isArray(entries)) {
-      return [];
-    }
-
-    return entries.map((entry) => ({
-      ...entry,
-      status: normalizeJournalStatus(entry.status),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function loadJournalEntries() {
-  const savedEntries = loadSavedJournalEntries();
-  const savedIds = new Set(savedEntries.map((entry) => entry.id));
-
-  return [
-    ...savedEntries,
-    ...journalRows.filter((entry) => !savedIds.has(entry.id)),
-  ];
-}
-
-function saveSavedJournalEntries(entries) {
-  window.localStorage?.setItem(JOURNAL_ENTRIES_STORAGE_KEY, JSON.stringify(entries));
-}
-
-function notifyJournalEntriesUpdated() {
-  window.dispatchEvent(new Event(JOURNAL_ENTRIES_UPDATED_EVENT));
-}
-
-function buildManagerRowFromEntry({ header, lines, transactionNo }) {
-  const debit = lines.reduce((sum, line) => sum + parseAmount(line.debit), 0);
-  const credit = lines.reduce((sum, line) => sum + parseAmount(line.credit), 0);
-
-  return {
-    id: transactionNo,
-    status: normalizeJournalStatus(header.status),
-    book: header.ledgerBook,
-    entryNumber: transactionNo,
-    entryDate: formatDisplayDate(header.transactionDate),
-    referenceNumber: header.referenceNo,
-    referenceType: header.referenceType,
-    remarks: header.remarks,
-    debitTotal: debit,
-    creditTotal: credit,
-  };
-}
-
-function upsertJournalEntry(row) {
-  const savedEntries = loadSavedJournalEntries();
-  const nextEntries = [
-    row,
-    ...savedEntries.filter((entry) => entry.id !== row.id),
-  ];
-
-  saveSavedJournalEntries(nextEntries);
-  notifyJournalEntriesUpdated();
 }
 
 function getNextJournalSequence() {
@@ -821,23 +629,58 @@ function JournalMetric({ label, value, tone = '' }) {
   );
 }
 
-export function JournalEntryManagerView({ onNewEntry }) {
+export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'entryDate', direction: 'desc' });
-  const [entryRows, setEntryRows] = useState(() => loadJournalEntries());
+  const [entryRows, setEntryRows] = useState([]);
+  const [bookRows, setBookRows] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    const refreshRows = () => {
-      setEntryRows(loadJournalEntries());
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadRows = async () => {
+      setIsLoading(true);
+      setLoadError('');
+
+      try {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [journalResponse, bookResponse] = await Promise.all([
+          fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
+        ]);
+        const journalData = await journalResponse.json().catch(() => ({}));
+        const bookData = await bookResponse.json().catch(() => ({}));
+
+        if (!journalResponse.ok) {
+          throw new Error(journalData?.message || 'Unable to load journal entries.');
+        }
+
+        if (!bookResponse.ok) {
+          throw new Error(bookData?.message || 'Unable to load journal books.');
+        }
+
+        const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+        setBookRows(nextBookRows);
+        setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows)));
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setLoadError(error.message || 'Unable to load journal entries.');
+          setEntryRows([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
     };
 
-    refreshRows();
-    window.addEventListener(JOURNAL_ENTRIES_UPDATED_EVENT, refreshRows);
+    loadRows();
 
-    return () => {
-      window.removeEventListener(JOURNAL_ENTRIES_UPDATED_EVENT, refreshRows);
-    };
+    return () => controller.abort();
   }, []);
 
   const filteredRows = useMemo(() => {
@@ -908,11 +751,13 @@ export function JournalEntryManagerView({ onNewEntry }) {
         </div>
       </div>
 
+      {loadError ? <div className="etr-journal-action-message is-error">{loadError}</div> : null}
+
       <section className="etr-journal-panel etr-journal-manager-panel">
         <div className="etr-journal-panel-head">
           <div>
             <h2>Journal Entries</h2>
-            <span>{sortedRows.length} record{sortedRows.length === 1 ? '' : 's'} found</span>
+            <span>{isLoading ? 'Loading journal entries...' : `${sortedRows.length} record${sortedRows.length === 1 ? '' : 's'} found`}</span>
           </div>
 
           <label className="etr-journal-search">
@@ -954,7 +799,7 @@ export function JournalEntryManagerView({ onNewEntry }) {
               ) : null}
 
               {pagedRows.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} className="etr-expense-clickable-row" onClick={() => onOpenEntry?.(row.raw || row)}>
                   {managerColumns.map((column) => (
                     <td key={column.key} className={column.numeric ? 'is-number' : ''}>
                       {column.key === 'status' ? (
@@ -999,7 +844,7 @@ export function JournalEntryManagerView({ onNewEntry }) {
   );
 }
 
-function JournalEntryView({ user, selectedExpense = null, onSaved }) {
+function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry = null, onSaved }) {
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [referenceRows, setReferenceRows] = useState([]);
   const [bookRows, setBookRows] = useState([]);
@@ -1014,6 +859,49 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
+
+  const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows) => {
+    const resolvedBook = findBook(nextBookRows, String(data?.bookID ?? data?.bookId ?? ''));
+    const nextLines = Array.isArray(data?.details) && data.details.length > 0
+      ? data.details.map((detail, index) => {
+        const accountTitle = findAccountTitle(nextAccountTitleRows, String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''));
+        const costUnit = findCostUnit(nextCostUnitRows, String(detail?.costUnitID ?? detail?.costUnitId ?? ''));
+
+        return {
+          id: Date.now() + index,
+          selected: false,
+          accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
+          costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
+          accountCode: accountTitle?.code || '',
+          accountTitle: accountTitle?.description || '',
+          subsidiary: '',
+          costCenter: costUnit?.display || '',
+          debit: Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '',
+          credit: Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '',
+          remarks: String(detail?.remarks || ''),
+        };
+      })
+      : createDefaultJournalLines();
+
+    setHeader((current) => ({
+      ...current,
+      status: getField(data, ['statusLabel', 'StatusLabel']) || 'Pending',
+      transactionNo: String(data?.entryNumber || ''),
+      transactionDate: String(data?.entryDate || '').slice(0, 10) || current.transactionDate,
+      bookId: resolvedBook?.bookId || String(data?.bookID ?? data?.bookId ?? current.bookId),
+      ledgerBook: resolvedBook?.display || current.ledgerBook,
+      referenceId: Number(data?.referenceType ?? data?.ReferenceType) === 32768 ? String(data?.referenceID ?? data?.referenceId ?? '') : '',
+      referenceType: getField(data, ['referenceTypeLabel', 'ReferenceTypeLabel']) || current.referenceType,
+      referenceNo: String(data?.referenceNo || ''),
+      remarks: String(data?.remarks || ''),
+    }));
+    setLines(nextLines);
+    setAuditTrail({
+      created: null,
+      modified: null,
+      postedCancelled: null,
+    });
+  };
 
   const loadJournalForReference = async (expenseId, signal) => {
     if (!expenseId) {
@@ -1043,45 +931,26 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
       throw new Error(data?.message || 'Unable to load journal entry for the selected daily expense.');
     }
 
-    const resolvedBook = findBook(bookRows, String(data?.bookID ?? data?.bookId ?? ''));
-    const nextLines = Array.isArray(data?.details) && data.details.length > 0
-      ? data.details.map((detail, index) => {
-        const accountTitle = findAccountTitle(accountTitleRows, String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''));
-        const costUnit = findCostUnit(costUnitRows, String(detail?.costUnitID ?? detail?.costUnitId ?? ''));
-        const debit = Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '';
-        const credit = Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '';
+    applyJournalEntryRecord(data);
+  };
 
-        return {
-          id: Date.now() + index,
-          selected: false,
-          accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
-          costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
-          accountCode: accountTitle?.code || '',
-          accountTitle: accountTitle?.description || '',
-          subsidiary: '',
-          costCenter: costUnit?.display || '',
-          debit,
-          credit,
-          remarks: String(detail?.remarks || ''),
-        };
-      })
-      : createDefaultJournalLines();
+  const loadJournalById = async (journalEntryId, signal) => {
+    if (!journalEntryId) {
+      return;
+    }
 
-    setHeader((current) => ({
-      ...current,
-      status: 'Pending',
-      transactionNo: String(data?.entryNumber || ''),
-      transactionDate: String(data?.entryDate || '').slice(0, 10) || current.transactionDate,
-      bookId: resolvedBook?.bookId || String(data?.bookID ?? data?.bookId ?? current.bookId),
-      ledgerBook: resolvedBook?.display || current.ledgerBook,
-      remarks: String(data?.remarks || ''),
-    }));
-    setLines(nextLines);
-    setAuditTrail({
-      created: null,
-      modified: null,
-      postedCancelled: null,
+    const token = getToken();
+    const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${journalEntryId}`), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal,
     });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to load the selected journal entry.');
+    }
+
+    applyJournalEntryRecord(data);
   };
 
   useEffect(() => {
@@ -1173,7 +1042,7 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
   }, []);
 
   useEffect(() => {
-    if (!selectedExpense) {
+    if (selectedJournalEntry || !selectedExpense) {
       return;
     }
 
@@ -1189,7 +1058,7 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
   }, [selectedExpense]);
 
   useEffect(() => {
-    if (!header.referenceId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
+    if (selectedJournalEntry || !header.referenceId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
       return;
     }
 
@@ -1202,7 +1071,25 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
     });
 
     return () => controller.abort();
-  }, [header.referenceId, accountTitleRows, costUnitRows, bookRows]);
+  }, [selectedJournalEntry, header.referenceId, accountTitleRows, costUnitRows, bookRows]);
+
+  useEffect(() => {
+    const journalEntryId = selectedJournalEntry?.journalEntryId || selectedJournalEntry?.journalEntryID || 0;
+
+    if (!journalEntryId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    loadJournalById(journalEntryId, controller.signal).catch((error) => {
+      if (error.name !== 'AbortError') {
+        setActionError(error.message || 'Unable to load the selected journal entry.');
+      }
+    });
+
+    return () => controller.abort();
+  }, [selectedJournalEntry, accountTitleRows, costUnitRows, bookRows]);
 
   const auditUserName = getAuditEmployeeName(employeeInfo);
   const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
@@ -1392,7 +1279,6 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
         modified: { name: auditUserName || getUserDisplayName(user), at: now },
         postedCancelled: null,
       });
-      upsertJournalEntry(buildManagerRowFromEntry({ header: savedHeader, lines, transactionNo: savedHeader.transactionNo }));
       clearJournalDraftStorage();
       setActionMessage(
         mode === 'post'
@@ -1713,3 +1599,4 @@ function JournalEntryView({ user, selectedExpense = null, onSaved }) {
 }
 
 export default JournalEntryView;
+

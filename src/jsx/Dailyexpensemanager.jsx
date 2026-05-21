@@ -9,6 +9,8 @@ const DAILY_EXPENSE_ER_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expens
 const DAILY_EXPENSE_EXPENSE_REPORT_PREVIEW_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report/preview`;
 const DAILY_EXPENSE_EXPENSE_REPORT_FINALIZE_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report/finalize`;
 const DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/pdf-summary`;
+const JOURNAL_ENTRY_EXPENSE_REPORT_ENDPOINT = '/api/journal-entry/expense-report';
+const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const MANAGER_PAGE_SIZE = 8;
@@ -242,6 +244,47 @@ function getGeneratedNoFromApi(data) {
     'No',
     'Value',
   ]);
+}
+
+function normalizeBook(row) {
+  const bookId = getField(row, ['bookId', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name']);
+
+  if (!bookId || !code) {
+    return null;
+  }
+
+  return {
+    bookId,
+    code,
+    description,
+    display: description ? `${code} - ${description}` : code,
+  };
+}
+
+function resolveJournalVoucherBookId(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return '';
+  }
+
+  const journalVoucherBook = rows.find((row) => {
+    const haystack = [row.code, row.description, row.display]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+      .toLowerCase();
+
+    return haystack.includes('journal voucher');
+  });
+
+  if (journalVoucherBook?.bookId) {
+    return journalVoucherBook.bookId;
+  }
+
+  const generalBook = rows.find((row) => String(row.code || '').trim().toUpperCase() === 'GENERAL');
+
+  return generalBook?.bookId || rows[0]?.bookId || '';
 }
 
 function formatDate(value) {
@@ -1394,10 +1437,11 @@ const columns = [
   { key: 'attachment', label: 'Attachment' },
 ];
 
-function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack, onRefresh }) {
+function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack, onRefresh, onJournalEntryCreated }) {
   const [employeeNo, setEmployeeNo] = useState(() => getReportEmployeeNo(user, rows));
   const [employeeName, setEmployeeName] = useState(() => getReportEmployeeName(user, rows));
   const [currentEmployeeId, setCurrentEmployeeId] = useState(() => getReportEmployeeId(user, rows));
+  const [bookRows, setBookRows] = useState([]);
   const [employeeLoadError, setEmployeeLoadError] = useState('');
   const [hasCurrentEmployee, setHasCurrentEmployee] = useState(false);
   const reportDate = getTodayInputDate();
@@ -1453,17 +1497,31 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       setEmployeeLoadError('');
 
       try {
-        const response = await fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
-        });
-        const data = await response.json().catch(() => ({}));
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [employeeResponse, bookResponse] = await Promise.all([
+          fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
+            headers,
+            signal: controller.signal,
+          }),
+          fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), {
+            headers,
+            signal: controller.signal,
+          }),
+        ]);
+        const data = await employeeResponse.json().catch(() => ({}));
+        const bookData = await bookResponse.json().catch(() => ({}));
 
-        if (!response.ok) {
+        if (!employeeResponse.ok) {
           throw new Error(data?.message || 'Unable to load current employee information.');
         }
 
+        if (!bookResponse.ok) {
+          throw new Error(bookData?.message || 'Unable to load journal book options.');
+        }
+
         const employee = getReportEmployeeFromApi(data);
+        const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+        setBookRows(nextBookRows);
 
         if (employee) {
           setEmployeeNo(employee.employeeNo);
@@ -1572,6 +1630,9 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     if (!currentEmployeeId) {
       throw new Error('Unable to determine the current employee for expense report finalization.');
     }
+    const expenseIds = filteredReportRows
+      .map((row) => Number(row.expenseId))
+      .filter((value) => Number.isFinite(value) && value > 0);
     const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_FINALIZE_ENDPOINT), {
       method: 'POST',
       headers: {
@@ -1583,12 +1644,45 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         fromDate: dateFrom,
         toDate: dateTo,
         erNo,
+        expenseIDs: expenseIds,
       }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data?.message || 'Unable to finalize expense report.');
     }
+    return data;
+  };
+
+  const createExpenseReportJournalEntry = async (erNo) => {
+    const token = getToken();
+    const resolvedBookId = resolveJournalVoucherBookId(bookRows);
+
+    if (!currentEmployeeId) {
+      throw new Error('Unable to determine the current employee for journal entry creation.');
+    }
+
+    const response = await fetch(buildApiUrl(JOURNAL_ENTRY_EXPENSE_REPORT_ENDPOINT), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        employeeId: currentEmployeeId,
+        fromDate: dateFrom,
+        toDate: dateTo,
+        erNo,
+        description: purpose || 'Reimbursement',
+        ...(resolvedBookId ? { bookId: Number(resolvedBookId) } : {}),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to create journal entry for the expense report.');
+    }
+
     return data;
   };
   const handleGenerateReport = async () => {
@@ -1658,6 +1752,16 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
       await finalizeErForm(generatedNo);
+      const journalEntry = await createExpenseReportJournalEntry(generatedNo);
+      onJournalEntryCreated?.({
+        journalEntryId: journalEntry?.journalEntryId || 0,
+        entryNumber: journalEntry?.entryNumber || '',
+        referenceNo: journalEntry?.referenceNo || generatedNo,
+        referenceType: journalEntry?.referenceType || 32769,
+        referenceTypeLabel: 'Expense Report',
+        status: 0,
+        statusLabel: 'Pending',
+      });
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
     }
@@ -1778,7 +1882,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   );
 }
 
-export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense }) {
+export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, onJournalEntryCreated }) {
   const [rows, setRows] = useState([]);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -1903,6 +2007,7 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
         loadError={loadError}
         onBack={() => setIsReportOpen(false)}
         onRefresh={() => loadDailyExpenses()}
+        onJournalEntryCreated={onJournalEntryCreated}
       />
     );
   }

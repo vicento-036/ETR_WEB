@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DailyExpenseManager from './Dailyexpensemanager.jsx';
 import ExpenseEntryView from './Dailyexpense.jsx';
-import JournalEntryView, { JournalEntryManagerView, clearJournalDraftStorage } from './Journalentry.jsx';
+import JournalEntryView, { JournalEntryManagerView } from './Journalentry.jsx';
+import { clearJournalDraftStorage } from '../services/journalDraftStorage';
 import WithdrawalEntry from './WithdrawalEntry.jsx';
 import { formatDashboardDocumentTitle } from '../constants/documentTitle.js';
 
@@ -569,10 +570,12 @@ function DashboardContent({
   activeItemId,
   user,
   selectedExpense,
+  selectedJournalEntry,
   journalEntryKey,
   onJournalEntryKeyBump,
   onNavigate,
   onOpenExpense,
+  onOpenJournalEntry,
   onBackToManager,
 }) {
   if (activeItemId === 'daily-expense-manager') {
@@ -587,6 +590,11 @@ function DashboardContent({
           onOpenExpense(expense);
           onNavigate('expense-entry');
         }}
+        onJournalEntryCreated={(journalEntry) => {
+          onOpenJournalEntry(journalEntry);
+          onJournalEntryKeyBump();
+          onNavigate('journal-entry');
+        }}
       />
     );
   }
@@ -599,8 +607,13 @@ function DashboardContent({
     return (
       <JournalEntryManagerView
         user={user}
+        onOpenEntry={(journalEntry) => {
+          onOpenJournalEntry(journalEntry);
+          onNavigate('journal-entry');
+        }}
         onNewEntry={() => {
           clearJournalDraftStorage();
+          onOpenJournalEntry(null);
           onJournalEntryKeyBump();
           onNavigate('journal-entry');
         }}
@@ -613,6 +626,8 @@ function DashboardContent({
       <JournalEntryView
         key={journalEntryKey}
         user={user}
+        selectedExpense={selectedExpense}
+        selectedJournalEntry={selectedJournalEntry}
         onSaved={() => onNavigate('journal-manager')}
       />
     );
@@ -684,6 +699,7 @@ function DashboardPage({ user, onLogout }) {
   const [isSidebarDrawerOpen, setIsSidebarDrawerOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
+  const [selectedJournalEntry, setSelectedJournalEntry] = useState(null);
   const [journalEntryKey, setJournalEntryKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -727,6 +743,10 @@ function DashboardPage({ user, onLogout }) {
   const navigateToModule = (itemId) => {
     if (itemId !== 'expense-entry') {
       setSelectedExpense(null);
+    }
+
+    if (itemId !== 'journal-entry') {
+      setSelectedJournalEntry(null);
     }
 
     setIsSidebarDrawerOpen(false);
@@ -1077,10 +1097,12 @@ function DashboardPage({ user, onLogout }) {
                 activeItemId={activeItemId}
                 user={user}
                 selectedExpense={selectedExpense}
+                selectedJournalEntry={selectedJournalEntry}
                 journalEntryKey={journalEntryKey}
                 onJournalEntryKeyBump={() => setJournalEntryKey((current) => current + 1)}
                 onNavigate={navigateToModule}
                 onOpenExpense={setSelectedExpense}
+                onOpenJournalEntry={setSelectedJournalEntry}
                 onBackToManager={() => {
                   setSelectedExpense(null);
                   navigateToModule('daily-expense-manager');
