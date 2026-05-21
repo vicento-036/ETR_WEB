@@ -6,6 +6,8 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const DAILY_EXPENSE_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/generated-no`;
 const DAILY_EXPENSE_ER_GENERATED_NO_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report-generated-no`;
+const DAILY_EXPENSE_EXPENSE_REPORT_PREVIEW_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report/preview`;
+const DAILY_EXPENSE_EXPENSE_REPORT_FINALIZE_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/expense-report/finalize`;
 const DAILY_EXPENSE_PDF_SUMMARY_ENDPOINT = `${DAILY_EXPENSE_ENDPOINT}/pdf-summary`;
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
@@ -383,6 +385,29 @@ function getReportEmployeeName(user, rows) {
   return rows.find((row) => row.employeeName)?.employeeName || firstName || lastName || '';
 }
 
+function getReportEmployeeId(user, rows) {
+  const rawEmployeeId = getUserField(user, [
+    'employeeId',
+    'employeeID',
+    'EmployeeId',
+    'EmployeeID',
+    'id',
+    'Id',
+  ]);
+  if (rawEmployeeId) {
+    const parsedEmployeeId = Number(rawEmployeeId);
+    if (Number.isFinite(parsedEmployeeId) && parsedEmployeeId > 0) {
+      return parsedEmployeeId;
+    }
+  }
+  return rows.reduce((resolvedId, row) => {
+    if (resolvedId > 0) {
+      return resolvedId;
+    }
+    const rowEmployeeId = Number(row?.employeeId || row?.employeeID || row?.EmployeeId || row?.EmployeeID || 0);
+    return Number.isFinite(rowEmployeeId) && rowEmployeeId > 0 ? rowEmployeeId : 0;
+  }, 0);
+}
 function normalizeReportEmployee(row) {
   if (!row) {
     return null;
@@ -396,6 +421,7 @@ function normalizeReportEmployee(row) {
   }
 
   return {
+    employeeId: getReportEmployeeId(row, []),
     employeeNo,
     employeeName,
   };
@@ -1368,6 +1394,7 @@ const columns = [
 function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBack, onRefresh }) {
   const [employeeNo, setEmployeeNo] = useState(() => getReportEmployeeNo(user, rows));
   const [employeeName, setEmployeeName] = useState(() => getReportEmployeeName(user, rows));
+  const [currentEmployeeId, setCurrentEmployeeId] = useState(() => getReportEmployeeId(user, rows));
   const [employeeLoadError, setEmployeeLoadError] = useState('');
   const [hasCurrentEmployee, setHasCurrentEmployee] = useState(false);
   const reportDate = getTodayInputDate();
@@ -1433,6 +1460,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         if (employee) {
           setEmployeeNo(employee.employeeNo);
           setEmployeeName(employee.employeeName);
+          setCurrentEmployeeId(employee.employeeId || 0);
           setHasCurrentEmployee(true);
         }
       } catch (error) {
@@ -1497,6 +1525,60 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     return normalizeErSummaryRows(data, dateFrom);
   };
 
+  const previewExpenseReport = async (erNo) => {
+    const token = getToken();
+
+    if (!currentEmployeeId) {
+      throw new Error('Unable to determine the current employee for expense report preview.');
+    }
+
+    const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_PREVIEW_ENDPOINT), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        employeeId: currentEmployeeId,
+        fromDate: dateFrom,
+        toDate: dateTo,
+        erNo,
+        description: purpose || 'Reimbursement',
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to preview expense report.');
+    }
+
+    return data;
+  };
+
+  const finalizeErForm = async (erNo) => {
+    const token = getToken();
+    if (!currentEmployeeId) {
+      throw new Error('Unable to determine the current employee for expense report finalization.');
+    }
+    const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_FINALIZE_ENDPOINT), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: JSON.stringify({
+        employeeId: currentEmployeeId,
+        fromDate: dateFrom,
+        toDate: dateTo,
+        erNo,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to finalize expense report.');
+    }
+    return data;
+  };
   const handleGenerateReport = async () => {
     if (isLoading || loadError || isGeneratingNo) {
       return;
@@ -1546,6 +1628,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         return;
       }
 
+      await previewExpenseReport(generatedNo);
       const summaryRows = await loadErSummaryRows();
       const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
 
@@ -1562,6 +1645,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       });
 
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
+      await finalizeErForm(generatedNo);
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
     }
@@ -1935,3 +2019,9 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense })
     </div>
   );
 }
+
+
+
+
+
+

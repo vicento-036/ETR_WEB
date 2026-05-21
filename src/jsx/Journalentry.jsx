@@ -4,6 +4,11 @@ import '../css/Journalentry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
+const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
+const COST_UNITS_ENDPOINT = '/api/costunits';
+const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
+const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
+const JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT = '/api/journal-entry/daily-expense';
 const JOURNAL_DRAFT_STORAGE_KEY = 'etr.journalEntry.draft';
 const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
 const JOURNAL_ENTRIES_STORAGE_KEY = 'etr.journalEntry.records';
@@ -167,6 +172,8 @@ function createBlankJournalLine(id = Date.now()) {
   return {
     id,
     selected: false,
+    accountTitleId: '',
+    costUnitId: '',
     accountCode: '',
     accountTitle: '',
     subsidiary: '',
@@ -191,8 +198,10 @@ function createDefaultJournalHeader() {
     status: '',
     transactionNo: '',
     transactionDate: new Date().toISOString().slice(0, 10),
-    ledgerBook: 'GENERAL',
-    referenceType: 'Adjustment',
+    bookId: '',
+    ledgerBook: '',
+    referenceId: '',
+    referenceType: 'Daily Expense',
     referenceNo: '',
     company: 'ETR Integrated Systems',
     remarks: '',
@@ -243,6 +252,169 @@ function formatMoney(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function getApiCollection(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.$values)) {
+    return data.$values;
+  }
+
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  if (Array.isArray(data?.result)) {
+    return data.result;
+  }
+
+  return [];
+}
+
+function getField(source, fieldNames) {
+  for (const fieldName of fieldNames) {
+    const value = source?.[fieldName];
+
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value).trim();
+    }
+  }
+
+  return '';
+}
+
+function normalizeAccountTitle(row) {
+  const accountTitleId = getField(row, ['accountTitleId', 'accountTitleID', 'AccountTitleID', 'AccountTitleId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code', 'accountCode', 'AccountCode']);
+  const description = getField(row, ['description', 'Description', 'accountDescription', 'AccountDescription', 'name', 'Name']);
+
+  if (!accountTitleId || !code || !description) {
+    return null;
+  }
+
+  return {
+    accountTitleId,
+    code,
+    description,
+    display: `${code} - ${description}`,
+  };
+}
+
+function normalizeCostUnit(row) {
+  const costUnitId = getField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name']);
+
+  if (!costUnitId || !code || !description) {
+    return null;
+  }
+
+  return {
+    costUnitId,
+    code,
+    description,
+    display: `${code} - ${description}`,
+  };
+}
+
+function normalizeBook(row) {
+  const bookId = getField(row, ['bookId', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name']);
+
+  if (!bookId || !code) {
+    return null;
+  }
+
+  return {
+    bookId,
+    code,
+    description,
+    display: description ? `${code} - ${description}` : code,
+  };
+}
+
+function normalizeDailyExpenseReference(row) {
+  const expenseId = getField(row, ['expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']);
+  const referenceNo = getField(row, ['referenceNo', 'ReferenceNo']);
+  const employeeName = getField(row, ['employeeName', 'EmployeeName']);
+  const documentNo = getField(row, ['documentNo', 'DocumentNo']);
+  const description = getField(row, ['description', 'Description']);
+  const rawStatus = getField(row, ['status', 'Status', 'statusLabel', 'StatusLabel']);
+  const numericStatus = Number(row?.statusValue ?? row?.StatusValue ?? row?.statusID ?? row?.StatusID ?? row?.status ?? row?.Status ?? '');
+  const normalizedStatus = Number.isFinite(numericStatus) && numericStatus > 0
+    ? (numericStatus === 1 ? 'Approved' : numericStatus === 2 ? 'Rejected' : 'Pending')
+    : rawStatus || 'Pending';
+
+  if (!expenseId || !referenceNo) {
+    return null;
+  }
+
+  return {
+    expenseId,
+    referenceNo,
+    employeeName,
+    documentNo,
+    description,
+    status: normalizedStatus,
+    display: [referenceNo, employeeName, documentNo].filter(Boolean).join(' - '),
+  };
+}
+
+function findAccountTitle(rows, value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return rows.find((row) => (
+    row.accountTitleId === value
+    || row.code.toLowerCase() === normalizedValue
+    || row.description.toLowerCase() === normalizedValue
+    || row.display.toLowerCase() === normalizedValue
+  )) || null;
+}
+
+function findCostUnit(rows, value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return rows.find((row) => (
+    row.costUnitId === value
+    || row.code.toLowerCase() === normalizedValue
+    || row.description.toLowerCase() === normalizedValue
+    || row.display.toLowerCase() === normalizedValue
+  )) || null;
+}
+
+function findBook(rows, value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return rows.find((row) => (
+    row.bookId === value
+    || row.code.toLowerCase() === normalizedValue
+    || row.description.toLowerCase() === normalizedValue
+    || row.display.toLowerCase() === normalizedValue
+  )) || null;
+}
+
+function getReferenceOptionLabel(row) {
+  return [row.referenceNo, row.employeeName, row.documentNo].filter(Boolean).join(' - ');
 }
 
 function normalizeJournalStatus(status) {
@@ -827,48 +999,210 @@ export function JournalEntryManagerView({ onNewEntry }) {
   );
 }
 
-function JournalEntryView({ user, onSaved }) {
+function JournalEntryView({ user, selectedExpense = null, onSaved }) {
   const [employeeInfo, setEmployeeInfo] = useState(null);
+  const [referenceRows, setReferenceRows] = useState([]);
+  const [bookRows, setBookRows] = useState([]);
+  const [accountTitleRows, setAccountTitleRows] = useState([]);
+  const [costUnitRows, setCostUnitRows] = useState([]);
   const [auditTrail, setAuditTrail] = useState(createDefaultAuditTrail);
   const [previewAuditAt] = useState(() => new Date());
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const [lookupError, setLookupError] = useState('');
+  const [isLookupsLoading, setIsLookupsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
+
+  const loadJournalForReference = async (expenseId, signal) => {
+    if (!expenseId) {
+      return;
+    }
+
+    const token = getToken();
+    const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT}/${expenseId}`), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal,
+    });
+
+    if (response.status === 404) {
+      setHeader((current) => ({
+        ...current,
+        status: '',
+        transactionNo: '',
+      }));
+      setLines(createDefaultJournalLines());
+      setAuditTrail(createDefaultAuditTrail());
+      return;
+    }
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to load journal entry for the selected daily expense.');
+    }
+
+    const resolvedBook = findBook(bookRows, String(data?.bookID ?? data?.bookId ?? ''));
+    const nextLines = Array.isArray(data?.details) && data.details.length > 0
+      ? data.details.map((detail, index) => {
+        const accountTitle = findAccountTitle(accountTitleRows, String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''));
+        const costUnit = findCostUnit(costUnitRows, String(detail?.costUnitID ?? detail?.costUnitId ?? ''));
+        const debit = Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '';
+        const credit = Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '';
+
+        return {
+          id: Date.now() + index,
+          selected: false,
+          accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
+          costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
+          accountCode: accountTitle?.code || '',
+          accountTitle: accountTitle?.description || '',
+          subsidiary: '',
+          costCenter: costUnit?.display || '',
+          debit,
+          credit,
+          remarks: String(detail?.remarks || ''),
+        };
+      })
+      : createDefaultJournalLines();
+
+    setHeader((current) => ({
+      ...current,
+      status: 'Pending',
+      transactionNo: String(data?.entryNumber || ''),
+      transactionDate: String(data?.entryDate || '').slice(0, 10) || current.transactionDate,
+      bookId: resolvedBook?.bookId || String(data?.bookID ?? data?.bookId ?? current.bookId),
+      ledgerBook: resolvedBook?.display || current.ledgerBook,
+      remarks: String(data?.remarks || ''),
+    }));
+    setLines(nextLines);
+    setAuditTrail({
+      created: null,
+      modified: null,
+      postedCancelled: null,
+    });
+  };
 
   useEffect(() => {
     const token = getToken();
     const controller = new AbortController();
 
-    const loadCurrentEmployee = async () => {
+    const loadInitialData = async () => {
+      setIsLookupsLoading(true);
+      setLookupError('');
+
       try {
-        const response = await fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          signal: controller.signal,
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const [employeeResponse, accountTitleResponse, costUnitResponse, bookResponse, referenceResponse] = await Promise.all([
+          fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(ACCOUNT_TITLES_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(COST_UNITS_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), { headers, signal: controller.signal }),
+        ]);
+
+        const employeeData = await employeeResponse.json().catch(() => ({}));
+        const accountTitleData = await accountTitleResponse.json().catch(() => ({}));
+        const costUnitData = await costUnitResponse.json().catch(() => ({}));
+        const bookData = await bookResponse.json().catch(() => ({}));
+        const referenceData = await referenceResponse.json().catch(() => ({}));
+
+        if (employeeResponse.ok) {
+          const employee = employeeData?.employee || employeeData?.data || employeeData;
+
+          if (employee && typeof employee === 'object') {
+            setEmployeeInfo(employee);
+          }
+        }
+
+        if (!accountTitleResponse.ok) {
+          throw new Error(accountTitleData?.message || 'Unable to load account title options.');
+        }
+
+        if (!costUnitResponse.ok) {
+          throw new Error(costUnitData?.message || 'Unable to load cost unit options.');
+        }
+
+        if (!bookResponse.ok) {
+          throw new Error(bookData?.message || 'Unable to load ledger book options.');
+        }
+
+        if (!referenceResponse.ok) {
+          throw new Error(referenceData?.message || 'Unable to load daily expense references.');
+        }
+
+        const nextAccountTitleRows = getApiCollection(accountTitleData).map(normalizeAccountTitle).filter(Boolean);
+        const nextCostUnitRows = getApiCollection(costUnitData).map(normalizeCostUnit).filter(Boolean);
+        const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+        const nextReferenceRows = getApiCollection(referenceData)
+          .map(normalizeDailyExpenseReference)
+          .filter(Boolean)
+          .filter((row) => row.status.toLowerCase() === 'approved');
+
+        setAccountTitleRows(nextAccountTitleRows);
+        setCostUnitRows(nextCostUnitRows);
+        setBookRows(nextBookRows);
+        setReferenceRows(nextReferenceRows);
+
+        setHeader((current) => {
+          if (current.bookId || nextBookRows.length === 0) {
+            return current;
+          }
+
+          return {
+            ...current,
+            bookId: nextBookRows[0].bookId,
+            ledgerBook: nextBookRows[0].display,
+          };
         });
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          return;
-        }
-
-        const employee = data?.employee || data?.data || data;
-
-        if (employee && typeof employee === 'object') {
-          setEmployeeInfo(employee);
-        }
       } catch (error) {
         if (error.name !== 'AbortError') {
-          setEmployeeInfo(null);
+          setLookupError(error.message || 'Unable to load journal entry lookups.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLookupsLoading(false);
         }
       }
     };
 
-    loadCurrentEmployee();
+    loadInitialData();
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!selectedExpense) {
+      return;
+    }
+
+    const selectedReferenceId = String(selectedExpense?.expenseId || '');
+    const selectedReferenceNo = String(selectedExpense?.referenceNo || '');
+
+    setHeader((current) => ({
+      ...current,
+      referenceId: selectedReferenceId || current.referenceId,
+      referenceNo: selectedReferenceNo || current.referenceNo,
+      referenceType: 'Daily Expense',
+    }));
+  }, [selectedExpense]);
+
+  useEffect(() => {
+    if (!header.referenceId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    loadJournalForReference(header.referenceId, controller.signal).catch((error) => {
+      if (error.name !== 'AbortError') {
+        setActionError(error.message || 'Unable to load journal entry details.');
+      }
+    });
+
+    return () => controller.abort();
+  }, [header.referenceId, accountTitleRows, costUnitRows, bookRows]);
 
   const auditUserName = getAuditEmployeeName(employeeInfo);
   const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
@@ -900,41 +1234,113 @@ function JournalEntryView({ user, onSaved }) {
     setActionError('');
   };
 
-  const handleSaveDraft = async () => {
-    clearActionFeedback();
+  const updateHeader = (field, value) => {
+    setHeader((current) => {
+      if (field === 'bookId') {
+        const selectedBook = findBook(bookRows, value);
 
-    const validationErrors = validateJournalEntry(header, lines);
+        return {
+          ...current,
+          bookId: selectedBook?.bookId || value,
+          ledgerBook: selectedBook?.display || current.ledgerBook,
+        };
+      }
 
-    if (validationErrors.length > 0) {
-      setActionError(validationErrors.join(' '));
-      return;
-    }
+      if (field === 'referenceId') {
+        const selectedReference = referenceRows.find((row) => row.expenseId === value);
 
-    setIsSubmitting(true);
+        return {
+          ...current,
+          referenceId: value,
+          referenceNo: selectedReference?.referenceNo || '',
+          referenceType: 'Daily Expense',
+        };
+      }
 
-    try {
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 350);
-      });
-
-      const transactionNo = header.transactionNo.trim() || generateJournalTransactionNo(header.transactionDate);
-      const nextHeader = {
-        ...header,
-        status: 'Pending',
-        transactionNo,
-      };
-
-      upsertJournalEntry(buildManagerRowFromEntry({ header: nextHeader, lines, transactionNo }));
-      clearJournalDraftStorage();
-      onSaved?.();
-    } catch (error) {
-      setActionError(error.message || 'Unable to save draft.');
-    } finally {
-      setIsSubmitting(false);
-    }
+      return { ...current, [field]: value };
+    });
   };
 
-  const handlePostToLedger = async () => {
+  const updateLine = (lineId, field, value) => {
+    setLines((current) => current.map((line) => {
+      if (line.id !== lineId) {
+        return line;
+      }
+
+      const nextLine = { ...line, [field]: value };
+
+      if (field === 'accountCode' || field === 'accountTitle' || field === 'accountTitleId') {
+        const resolvedAccountTitle = findAccountTitle(accountTitleRows, field === 'accountTitleId' ? value : nextLine[field]);
+
+        if (resolvedAccountTitle) {
+          nextLine.accountTitleId = resolvedAccountTitle.accountTitleId;
+          nextLine.accountCode = resolvedAccountTitle.code;
+          nextLine.accountTitle = resolvedAccountTitle.description;
+        } else if (field === 'accountCode' || field === 'accountTitle') {
+          nextLine.accountTitleId = '';
+        }
+      }
+
+      if (field === 'costCenter' || field === 'costUnitId') {
+        const resolvedCostUnit = findCostUnit(costUnitRows, field === 'costUnitId' ? value : nextLine[field]);
+
+        if (resolvedCostUnit) {
+          nextLine.costUnitId = resolvedCostUnit.costUnitId;
+          nextLine.costCenter = resolvedCostUnit.display;
+        } else if (field === 'costCenter') {
+          nextLine.costUnitId = '';
+        }
+      }
+
+      return nextLine;
+    }));
+  };
+
+  const buildJournalPayload = () => {
+    const activeLines = lines.filter((line) => (
+      String(line.accountCode || '').trim()
+      || String(line.accountTitle || '').trim()
+      || parseAmount(line.debit) > 0
+      || parseAmount(line.credit) > 0
+      || String(line.remarks || '').trim()
+      || String(line.costCenter || '').trim()
+    ));
+
+    if (!header.referenceId || !header.referenceNo) {
+      throw new Error('Select an approved daily expense reference first.');
+    }
+
+    if (!header.bookId) {
+      throw new Error('Select a valid ledger book first.');
+    }
+
+    if (activeLines.length < 2) {
+      throw new Error('Add at least two journal detail rows before saving.');
+    }
+
+    const unresolvedLine = activeLines.find((line) => !line.accountTitleId);
+
+    if (unresolvedLine) {
+      throw new Error('Each journal line must match a valid account title from the API list.');
+    }
+
+    return {
+      ReferenceID: Number(header.referenceId),
+      ReferenceNo: header.referenceNo.trim(),
+      EntryDate: header.transactionDate,
+      BookID: Number(header.bookId),
+      Remarks: header.remarks.trim(),
+      Details: activeLines.map((line) => ({
+        AccountTitleID: Number(line.accountTitleId),
+        Debit: parseAmount(line.debit),
+        Credit: parseAmount(line.credit),
+        CostUnitID: line.costUnitId ? Number(line.costUnitId) : null,
+        Remarks: [line.subsidiary, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
+      })),
+    };
+  };
+
+  const submitJournalEntry = async (mode = 'save') => {
     clearActionFeedback();
 
     if (isPosted) {
@@ -943,45 +1349,78 @@ function JournalEntryView({ user, onSaved }) {
     }
 
     if (isCancelled) {
-      setActionError('This journal entry is cancelled and cannot be posted.');
+      setActionError('This journal entry is cancelled and cannot be saved.');
       return;
     }
 
-    const validationErrors = validateJournalEntry(header, lines, { requireBalanced: true });
+    const validationErrors = validateJournalEntry(header, lines, { requireBalanced: mode === 'post' });
 
     if (validationErrors.length > 0) {
       setActionError(validationErrors.join(' '));
       return;
     }
 
-    const confirmed = window.confirm('Post this journal entry to the ledger?');
+    setIsSubmitting(true);
+
+    try {
+      const payload = buildJournalPayload();
+      const token = getToken();
+      const response = await fetch(buildApiUrl(JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to save journal entry.');
+      }
+
+      const now = new Date();
+      const savedHeader = {
+        ...header,
+        status: 'Pending',
+        transactionNo: String(data?.entryNumber || ''),
+      };
+
+      setHeader(savedHeader);
+      setAuditTrail({
+        created: { name: auditUserName || getUserDisplayName(user), at: now },
+        modified: { name: auditUserName || getUserDisplayName(user), at: now },
+        postedCancelled: null,
+      });
+      upsertJournalEntry(buildManagerRowFromEntry({ header: savedHeader, lines, transactionNo: savedHeader.transactionNo }));
+      clearJournalDraftStorage();
+      setActionMessage(
+        mode === 'post'
+          ? 'Journal entry saved to WebAPI as Pending. No separate posting endpoint exists yet in the current API.'
+          : 'Journal entry saved to WebAPI successfully.',
+      );
+      onSaved?.();
+    } catch (error) {
+      setActionError(error.message || 'Unable to save journal entry.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    await submitJournalEntry('save');
+  };
+
+  const handlePostToLedger = async () => {
+    clearActionFeedback();
+
+    const confirmed = window.confirm('Save this journal entry to the WebAPI?');
 
     if (!confirmed) {
       return;
     }
 
-    setIsSubmitting(true);
-
-    try {
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 350);
-      });
-
-      const transactionNo = header.transactionNo.trim() || generateJournalTransactionNo(header.transactionDate);
-      const nextHeader = {
-        ...header,
-        status: 'Posted',
-        transactionNo,
-      };
-
-      upsertJournalEntry(buildManagerRowFromEntry({ header: nextHeader, lines, transactionNo }));
-      clearJournalDraftStorage();
-      onSaved?.();
-    } catch (error) {
-      setActionError(error.message || 'Unable to post journal entry.');
-    } finally {
-      setIsSubmitting(false);
-    }
+    await submitJournalEntry('post');
   };
 
   const handlePrintVoucher = () => {
@@ -1010,30 +1449,10 @@ function JournalEntryView({ user, onSaved }) {
     }
   };
 
-  const updateHeader = (field, value) => {
-    setHeader((current) => ({ ...current, [field]: value }));
-  };
-
-  const updateLine = (lineId, field, value) => {
-    setLines((current) => (
-      current.map((line) => (line.id === lineId ? { ...line, [field]: value } : line))
-    ));
-  };
-
   const addLine = () => {
     setLines((current) => [
       ...current,
-      {
-        id: Date.now(),
-        selected: false,
-        accountCode: '',
-        accountTitle: '',
-        subsidiary: '',
-        costCenter: '',
-        debit: '',
-        credit: '',
-        remarks: '',
-      },
+      createBlankJournalLine(Date.now()),
     ]);
   };
 
@@ -1078,6 +1497,7 @@ function JournalEntryView({ user, onSaved }) {
 
       {actionMessage ? React.createElement('div', { className: 'etr-journal-action-message' }, actionMessage) : null}
       {actionError ? React.createElement('div', { className: 'etr-journal-action-message is-error' }, actionError) : null}
+      {lookupError ? React.createElement('div', { className: 'etr-journal-action-message is-error' }, lookupError) : null}
 
       <div className="etr-journal-form-shell">
         <div className="etr-journal-content-column">
@@ -1092,7 +1512,7 @@ function JournalEntryView({ user, onSaved }) {
                 <div className="etr-journal-form-grid two">
                   <label className="etr-journal-field">
                     <span>Transaction No.</span>
-                    <input value={header.transactionNo} onChange={(event) => updateHeader('transactionNo', event.target.value)} placeholder="Generated on save" />
+                    <input value={header.transactionNo} onChange={(event) => updateHeader('transactionNo', event.target.value)} placeholder="Generated by WebAPI" readOnly />
                   </label>
                   <label className="etr-journal-field">
                     <span>Transaction Date</span>
@@ -1100,10 +1520,11 @@ function JournalEntryView({ user, onSaved }) {
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Ledger Book</span>
-                    <select value={header.ledgerBook} onChange={(event) => updateHeader('ledgerBook', event.target.value)}>
-                      <option value="GENERAL">GENERAL</option>
-                      <option value="MANUAL">MANUAL</option>
-                      <option value="ADJUSTING">ADJUSTING</option>
+                    <select value={header.bookId} onChange={(event) => updateHeader('bookId', event.target.value)} disabled={isLookupsLoading}>
+                      <option value="">{isLookupsLoading ? 'Loading books...' : 'Select ledger book'}</option>
+                      {bookRows.map((book) => (
+                        <option key={book.bookId} value={book.bookId}>{book.display}</option>
+                      ))}
                     </select>
                   </label>
                 </div>
@@ -1118,16 +1539,16 @@ function JournalEntryView({ user, onSaved }) {
                 <div className="etr-journal-form-grid two">
                   <label className="etr-journal-field">
                     <span>Reference Type</span>
-                    <select value={header.referenceType} onChange={(event) => updateHeader('referenceType', event.target.value)}>
-                      <option>Adjustment</option>
-                      <option>Accrual</option>
-                      <option>Reclass</option>
-                      <option>Manual Voucher</option>
-                    </select>
+                    <input value={header.referenceType} readOnly />
                   </label>
                   <label className="etr-journal-field">
-                    <span>Reference No.</span>
-                    <input value={header.referenceNo} onChange={(event) => updateHeader('referenceNo', event.target.value)} placeholder="Click to select" />
+                    <span>Daily Expense Reference</span>
+                    <select value={header.referenceId} onChange={(event) => updateHeader('referenceId', event.target.value)} disabled={isLookupsLoading}>
+                      <option value="">{isLookupsLoading ? 'Loading references...' : 'Select approved daily expense'}</option>
+                      {referenceRows.map((reference) => (
+                        <option key={reference.expenseId} value={reference.expenseId}>{getReferenceOptionLabel(reference)}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
@@ -1248,6 +1669,15 @@ function JournalEntryView({ user, onSaved }) {
                           inputMode={column.numeric ? 'decimal' : undefined}
                           aria-label={column.label}
                           placeholder={column.numeric ? '0.0000' : 'Click to select'}
+                          list={
+                            column.key === 'accountCode'
+                              ? 'etr-journal-account-code-options'
+                              : column.key === 'accountTitle'
+                                ? 'etr-journal-account-title-options'
+                                : column.key === 'costCenter'
+                                  ? 'etr-journal-cost-unit-options'
+                                  : undefined
+                          }
                         />
                       </td>
                     ))}
@@ -1255,6 +1685,21 @@ function JournalEntryView({ user, onSaved }) {
                 ))}
               </tbody>
             </table>
+            <datalist id="etr-journal-account-code-options">
+              {accountTitleRows.map((row) => (
+                <option key={row.accountTitleId} value={row.code}>{row.description}</option>
+              ))}
+            </datalist>
+            <datalist id="etr-journal-account-title-options">
+              {accountTitleRows.map((row) => (
+                <option key={row.accountTitleId} value={row.description}>{row.code}</option>
+              ))}
+            </datalist>
+            <datalist id="etr-journal-cost-unit-options">
+              {costUnitRows.map((row) => (
+                <option key={row.costUnitId} value={row.display}>{row.code}</option>
+              ))}
+            </datalist>
           </div>
 
           <label className="etr-journal-field etr-journal-details-remarks">

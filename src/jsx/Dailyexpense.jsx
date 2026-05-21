@@ -4,6 +4,7 @@ import '../css/Dailyexpense.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
+const ACCOUNT_TITLES_PERMISSIONS_ENDPOINT = '/api/account-titles/permissions';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
@@ -817,7 +818,7 @@ export default function ExpenseEntryView({
     const loadPermissions = async () => {
       try {
         const token = getToken();
-        const response = await fetch(buildApiUrl('/api/account-titles/permissions'), {
+        const response = await fetch(buildApiUrl(ACCOUNT_TITLES_PERMISSIONS_ENDPOINT), {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
 
