@@ -963,17 +963,20 @@ function downloadBlob(blob, filename) {
 }
 
 function normalizeCostUnit(row) {
-  const costUnitId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const costUnitId = getField(row, ['costUnitID', 'costUnitId', 'CostUnitID', 'CostUnitId', 'referenceID', 'ReferenceID', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
-  const description = getField(row, ['description', 'Description']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name']);
 
-  if (!costUnitId || !code || !description) {
+  if (!costUnitId || (!code && !description)) {
     return null;
   }
 
+  const finalCode = code || description || 'N/A';
+  const finalDesc = description || code || 'N/A';
+
   return {
     costUnitId: String(costUnitId),
-    display: `${code} - ${description}`,
+    display: finalCode === finalDesc ? finalCode : `${finalCode} - ${finalDesc}`,
   };
 }
 
@@ -1160,6 +1163,11 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const printReportPages = useMemo(() => chunkRowsForPrint(filteredReportRows), [filteredReportRows]);
 
   useEffect(() => {
+    setReportNo('');
+    setReportNoError('');
+  }, [dateFrom, dateTo, reportDate, employeeNo, employeeName, purpose]);
+
+  useEffect(() => {
     if (hasCurrentEmployee) {
       return;
     }
@@ -1206,6 +1214,10 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   }, []);
 
   const loadGeneratedNo = async (endpoint = DAILY_EXPENSE_GENERATED_NO_ENDPOINT) => {
+    if (String(reportNo || '').trim()) {
+      return String(reportNo).trim();
+    }
+
     const token = getToken();
     setIsGeneratingNo(true);
     setReportNoError('');

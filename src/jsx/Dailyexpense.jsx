@@ -443,20 +443,21 @@ function normalizeAccountTitle(row) {
 }
 
 function normalizeCostUnit(row) {
-  const costUnitId = getUserField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'id', 'Id']);
+  const costUnitId = getUserField(row, ['costUnitId', 'costUnitID', 'CostUnitID', 'CostUnitId', 'referenceID', 'ReferenceID', 'id', 'Id']);
   const code = getUserField(row, ['code', 'Code']);
   const description = getUserField(row, ['description', 'Description', 'name', 'Name']);
-  const type = getUserField(row, ['type', 'Type']);
 
-  if (!costUnitId || !code || !description) {
+  if (!costUnitId || (!code && !description)) {
     return null;
   }
 
+  const finalCode = code || description || 'N/A';
+  const finalDesc = description || code || 'N/A';
+
   return {
     costUnitId,
-    code,
-    description,
-    type,
+    code: finalCode,
+    description: finalDesc,
   };
 }
 
@@ -1713,8 +1714,8 @@ export default function ExpenseEntryView({
                           {!isCostUnitsLoading && !costUnitsError && filteredCostUnitRows.length === 0 ? (
                             <div className="etr-expense-combo-status">No cost units found.</div>
                           ) : null}
-                          {!isCostUnitsLoading && !costUnitsError ? filteredCostUnitRows.map((row) => (
-                            <button type="button" key={row.costUnitId} onClick={() => handleSelectCostUnit(row)}>
+                          {!isCostUnitsLoading && !costUnitsError ? filteredCostUnitRows.map((row, index) => (
+                            <button type="button" key={`${row.costUnitId}:${index}`} onClick={() => handleSelectCostUnit(row)}>
                               <span>{row.code}</span>
                               <strong>{row.description}</strong>
                             </button>
