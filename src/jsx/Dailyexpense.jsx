@@ -897,7 +897,6 @@ export default function ExpenseEntryView({
     const uploadData = new FormData();
     validFiles.forEach((file) => {
       uploadData.append('attachment', file);
-      uploadData.append('attachments', file);
     });
 
     const response = await fetch(buildApiUrl(`${DAILY_EXPENSE_ENDPOINT}/${expenseId}/attachment`), {
@@ -924,6 +923,7 @@ export default function ExpenseEntryView({
   const getUploadedAttachmentValue = (attachmentResults, ...keys) => attachmentResults
     .map((result) => keys.map((key) => result?.[key]).find(Boolean))
     .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
     .join(', ');
 
   const loadExistingAttachmentPreview = async (record, signal) => {
