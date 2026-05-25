@@ -747,3 +747,60 @@
     grid-template-columns: 1fr;
   }
 }
+
+.etr-report-reused-badge {
+  display: inline-block;
+  align-self: start;
+  border-radius: 4px;
+  background: #eefaf3;
+  color: #1d6b3d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.etr-report-original-no {
+  color: #42596f;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 2px 0 0 0;
+}
+
+.etr-report-status-banner.is-posted {
+  border: 1px solid rgba(39, 132, 78, 0.24);
+  border-radius: 6px;
+  background: #eefaf3;
+  color: #1d6b3d;
+  padding: 10px 12px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.etr-report-status-banner.is-posted strong {
+  color: #1a5c32;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.etr-report-status-banner.is-posted span {
+  color: #27844e;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.etr-report-generate-button.is-reprint {
+  background: linear-gradient(180deg, #107c41 0%, #0b592e 100%);
+  border-color: #107c41;
+}
+
+.etr-report-generate-button.is-reprint:hover:not(:disabled) {
+  background: #094b26;
+  border-color: #094b26;
+  transform: translateY(-1px);
+}

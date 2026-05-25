@@ -1449,7 +1449,9 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const [dateFrom, setDateFrom] = useState(getTodayInputDate);
   const [dateTo, setDateTo] = useState(getTodayInputDate);
   const [reportNo, setReportNo] = useState('');
+  const [originalReportNo, setOriginalReportNo] = useState('');
   const [reportNoError, setReportNoError] = useState('');
+  const [hasExistingJournal, setHasExistingJournal] = useState(false);
   const [isGeneratingNo, setIsGeneratingNo] = useState(false);
   const approvedRows = useMemo(() => rows.filter((row) => normalizeExpenseStatusValue(row.statusValue ?? row.status) === 1), [rows]);
   const filteredReportRows = useMemo(() => {
@@ -1490,9 +1492,70 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const printReportPages = useMemo(() => chunkRowsForPrint(filteredReportRows), [filteredReportRows]);
 
   useEffect(() => {
-    setReportNo('');
-    setReportNoError('');
-  }, [dateFrom, dateTo, reportDate, employeeNo, employeeName, purpose]);
+    if (filteredReportRows.length === 0 || !currentEmployeeId) {
+      setReportNo('');
+      setOriginalReportNo('');
+      setHasExistingJournal(false);
+      setReportNoError('');
+      return;
+    }
+
+    const controller = new AbortController();
+    const checkExistingReport = async () => {
+      try {
+        const token = getToken();
+        const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_PREVIEW_ENDPOINT), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            employeeId: currentEmployeeId,
+            fromDate: dateFrom,
+            toDate: dateTo,
+            erNo: "",
+            description: purpose || 'Reimbursement',
+            expenseIDs: getSelectedExpenseIds(),
+          }),
+        });
+
+        if (!response.ok) {
+          setReportNo('');
+          setOriginalReportNo('');
+          setHasExistingJournal(false);
+          return;
+        }
+
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+
+        const resolvedErNo = data.erNo || data.header?.referenceNo || "";
+        const originalErNo = data.originalErNo || data.header?.originalReferenceNo || "";
+        const canPost = data.header?.canPost !== false;
+
+        setOriginalReportNo(originalErNo);
+        if (!canPost) {
+          setReportNo(resolvedErNo);
+          setHasExistingJournal(true);
+        } else {
+          setReportNo('');
+          setHasExistingJournal(false);
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error("Error pre-checking existing expense report:", error);
+        }
+      }
+    };
+
+    checkExistingReport();
+
+    return () => {
+      controller.abort();
+    };
+  }, [dateFrom, dateTo, currentEmployeeId, filteredReportRows.length, purpose]);
 
   useEffect(() => {
     if (hasCurrentEmployee) {
@@ -1753,19 +1816,23 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     setReportNoError('');
 
     try {
-      const generatedNo = await loadGeneratedNo(DAILY_EXPENSE_ER_GENERATED_NO_ENDPOINT);
+      setIsGeneratingNo(true);
+      // Fetch the generated reference number first to be used for printing and posting
+      const previewData = await previewExpenseReport("");
+      const resolvedErNo = previewData.erNo || previewData.header?.referenceNo || "";
 
-      if (!generatedNo) {
-        return;
+      if (!resolvedErNo) {
+        throw new Error('Unable to resolve or generate report number.');
       }
 
-      await previewExpenseReport(generatedNo);
+      setReportNo(resolvedErNo);
+
       const summaryRows = await loadErSummaryRows();
       const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
 
       const pdfBlob = buildErFormPdfBlob({
         rows: summaryRows,
-        reportNo: generatedNo,
+        reportNo: resolvedErNo,
         employeeNo,
         employeeName,
         purpose,
@@ -1776,19 +1843,58 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       });
 
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
-      await finalizeErForm(generatedNo);
-      const journalEntry = await createExpenseReportJournalEntry(generatedNo);
+
+      await finalizeErForm(resolvedErNo);
+      const journalEntry = await createExpenseReportJournalEntry(resolvedErNo);
       onJournalEntryCreated?.({
         journalEntryId: journalEntry?.journalEntryId || 0,
         entryNumber: journalEntry?.entryNumber || '',
-        referenceNo: journalEntry?.referenceNo || generatedNo,
+        referenceNo: journalEntry?.referenceNo || resolvedErNo,
         referenceType: journalEntry?.referenceType || 32769,
         referenceTypeLabel: 'Expense Report',
         status: 0,
         statusLabel: 'Pending',
       });
+      setHasExistingJournal(true);
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
+    } finally {
+      setIsGeneratingNo(false);
+    }
+  };
+
+  const handleReprintErForm = async () => {
+    if (isLoading || loadError || isGeneratingNo) {
+      return;
+    }
+
+    setReportNoError('');
+
+    try {
+      setIsGeneratingNo(true);
+      // Just preview using the existing reportNo and download PDF
+      await previewExpenseReport(reportNo);
+      const summaryRows = await loadErSummaryRows();
+      const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
+
+      const pdfBlob = buildErFormPdfBlob({
+        rows: summaryRows,
+        reportNo: reportNo,
+        employeeNo,
+        employeeName,
+        purpose,
+        reportDate,
+        dateFrom,
+        dateTo,
+        grandTotal: summaryGrandTotal,
+      });
+
+      downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
+      setReportNoError("Expense report reprinted successfully.");
+    } catch (error) {
+      setReportNoError(error.message || 'Unable to reprint ER form.');
+    } finally {
+      setIsGeneratingNo(false);
     }
   };
 
@@ -1855,14 +1961,34 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
           <aside className="etr-report-filter-card">
             <span>Generate No</span>
             <strong>{reportNo || 'Ready to generate'}</strong>
+            {originalReportNo && originalReportNo !== reportNo ? (
+              <p className="etr-report-original-no">Original: {originalReportNo}</p>
+            ) : null}
+            {originalReportNo ? (
+              <span className="etr-report-reused-badge">REUSED / REPRINT</span>
+            ) : null}
             <p>{dateRangeLabel}</p>
+
+            {hasExistingJournal ? (
+              <div className="etr-report-status-banner is-posted">
+                <strong>Already posted to Journal Entry</strong>
+                <span>Reference No: {reportNo}</span>
+              </div>
+            ) : null}
+
             <div className="etr-report-action-buttons">
               <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || isGeneratingNo || !!loadError}>
                 {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating No...' : 'Reimbursement Report'}
               </button>
-              <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || isGeneratingNo || !!loadError}>
-                {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating ER #...' : 'Expense Report'}
-              </button>
+              {hasExistingJournal ? (
+                <button type="button" className="etr-report-generate-button is-reprint" onClick={handleReprintErForm} disabled={isLoading || isGeneratingNo || !!loadError}>
+                  {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Reprinting...' : 'Reprint Expense Report'}
+                </button>
+              ) : (
+                <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || isGeneratingNo || !!loadError}>
+                  {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating ER #...' : 'Expense Report'}
+                </button>
+              )}
             </div>
           </aside>
         </div>
