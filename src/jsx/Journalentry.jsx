@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getToken } from '../services/authStorage';
 import { clearJournalDraftStorage } from '../services/journalDraftStorage';
 import '../css/Journalentry.css';
@@ -9,6 +9,7 @@ const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
+const COMPANY_SEARCH_ENDPOINT = '/api/companies/search';
 const JOURNAL_ENTRY_ENDPOINT = '/api/journal-entry';
 const JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT = '/api/journal-entry/daily-expense';
 const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
@@ -55,7 +56,7 @@ function createDefaultJournalHeader() {
     referenceId: '',
     referenceType: 'Daily Expense',
     referenceNo: '',
-    company: 'ETR Integrated Systems',
+    company: '',
     remarks: '',
   };
 }
@@ -177,15 +178,32 @@ function normalizeBook(row) {
   const code = getField(row, ['code', 'Code']);
   const description = getField(row, ['description', 'Description', 'name', 'Name']);
 
-  if (!bookId || !code) {
+  if (!bookId && !description && !code) {
     return null;
   }
 
   return {
-    bookId,
+    bookId: bookId || description || code,
     code,
     description,
-    display: description ? `${code} - ${description}` : code,
+    display: description || code,
+  };
+}
+
+function normalizeCompany(row) {
+  const companyId = getField(row, ['companyId', 'CompanyID', 'CompanyId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code', 'companyCode', 'CompanyCode']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name', 'companyName', 'CompanyName']);
+
+  if (!companyId && !description) {
+    return null;
+  }
+
+  return {
+    companyId: companyId || description,
+    code,
+    description,
+    display: description ? (code ? `${code} - ${description}` : description) : code,
   };
 }
 
@@ -255,6 +273,21 @@ function findBook(rows, value) {
 
   return rows.find((row) => (
     row.bookId === value
+    || row.code.toLowerCase() === normalizedValue
+    || row.description.toLowerCase() === normalizedValue
+    || row.display.toLowerCase() === normalizedValue
+  )) || null;
+}
+
+function findCompany(rows, value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return rows.find((row) => (
+    row.companyId === value
     || row.code.toLowerCase() === normalizedValue
     || row.description.toLowerCase() === normalizedValue
     || row.display.toLowerCase() === normalizedValue
@@ -406,8 +439,8 @@ function formatAuditDateTime(value) {
   }
 
   const datePart = date.toLocaleDateString('en-US', {
-    month: 'numeric',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     year: 'numeric',
   });
   const timePart = date.toLocaleTimeString('en-US', {
@@ -484,10 +517,97 @@ function formatDisplayDate(value) {
   }
 
   return date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     year: 'numeric',
   });
+}
+
+function normalizeDateTextToIso(value) {
+  const text = String(value || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (!slashMatch) {
+    return '';
+  }
+
+  const month = slashMatch[1].padStart(2, '0');
+  const day = slashMatch[2].padStart(2, '0');
+  const year = slashMatch[3];
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  if (
+    date.getFullYear() !== Number(year)
+    || date.getMonth() + 1 !== Number(month)
+    || date.getDate() !== Number(day)
+  ) {
+    return '';
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function DateTextInput({ value, onChange }) {
+  const pickerRef = useRef(null);
+
+  const openPicker = () => {
+    const picker = pickerRef.current;
+
+    if (!picker) {
+      return;
+    }
+
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+      return;
+    }
+
+    picker.focus();
+  };
+
+  return (
+    <span style={{ position: 'relative', display: 'block' }}>
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="MM/DD/YYYY"
+        value={formatDisplayDate(value)}
+        readOnly
+        style={{ fontWeight: 400 }}
+        onClick={openPicker}
+        onFocus={openPicker}
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+      />
+    </span>
+  );
 }
 
 function validateJournalEntry(header, lines, { requireBalanced = false } = {}) {
@@ -848,6 +968,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [referenceRows, setReferenceRows] = useState([]);
   const [bookRows, setBookRows] = useState([]);
+  const [companyRows, setCompanyRows] = useState([]);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [costUnitRows, setCostUnitRows] = useState([]);
   const [auditTrail, setAuditTrail] = useState(createDefaultAuditTrail);
@@ -963,11 +1084,12 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const [employeeResponse, accountTitleResponse, costUnitResponse, bookResponse, referenceResponse] = await Promise.all([
+        const [employeeResponse, accountTitleResponse, costUnitResponse, bookResponse, companyResponse, referenceResponse] = await Promise.all([
           fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(ACCOUNT_TITLES_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(COST_UNITS_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(COMPANY_SEARCH_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), { headers, signal: controller.signal }),
         ]);
 
@@ -975,6 +1097,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const accountTitleData = await accountTitleResponse.json().catch(() => ({}));
         const costUnitData = await costUnitResponse.json().catch(() => ({}));
         const bookData = await bookResponse.json().catch(() => ({}));
+        const companyData = await companyResponse.json().catch(() => ({}));
         const referenceData = await referenceResponse.json().catch(() => ({}));
 
         if (employeeResponse.ok) {
@@ -997,6 +1120,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           throw new Error(bookData?.message || 'Unable to load ledger book options.');
         }
 
+        if (!companyResponse.ok) {
+          throw new Error(companyData?.message || 'Unable to load company options.');
+        }
+
         if (!referenceResponse.ok) {
           throw new Error(referenceData?.message || 'Unable to load daily expense references.');
         }
@@ -1004,6 +1131,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const nextAccountTitleRows = getApiCollection(accountTitleData).map(normalizeAccountTitle).filter(Boolean);
         const nextCostUnitRows = getApiCollection(costUnitData).map(normalizeCostUnit).filter(Boolean);
         const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+        const nextCompanyRows = getApiCollection(companyData).map(normalizeCompany).filter(Boolean);
         const nextReferenceRows = getApiCollection(referenceData)
           .map(normalizeDailyExpenseReference)
           .filter(Boolean)
@@ -1012,18 +1140,22 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         setAccountTitleRows(nextAccountTitleRows);
         setCostUnitRows(nextCostUnitRows);
         setBookRows(nextBookRows);
+        setCompanyRows(nextCompanyRows);
         setReferenceRows(nextReferenceRows);
 
         setHeader((current) => {
-          if (current.bookId || nextBookRows.length === 0) {
-            return current;
+          const nextHeader = { ...current };
+
+          if (!current.bookId && nextBookRows.length > 0) {
+            nextHeader.bookId = nextBookRows[0].bookId;
+            nextHeader.ledgerBook = nextBookRows[0].display;
           }
 
-          return {
-            ...current,
-            bookId: nextBookRows[0].bookId,
-            ledgerBook: nextBookRows[0].display,
-          };
+          if (!current.company && nextCompanyRows.length > 0) {
+            nextHeader.company = nextCompanyRows[0].description || nextCompanyRows[0].display || '';
+          }
+
+          return nextHeader;
         });
       } catch (error) {
         if (error.name !== 'AbortError') {
@@ -1141,6 +1273,15 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           referenceId: value,
           referenceNo: selectedReference?.referenceNo || '',
           referenceType: 'Daily Expense',
+        };
+      }
+
+      if (field === 'company') {
+        const selectedCompany = findCompany(companyRows, value);
+
+        return {
+          ...current,
+          company: selectedCompany?.description || value,
         };
       }
 
@@ -1402,7 +1543,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field">
                     <span>Transaction Date</span>
-                    <input type="date" value={header.transactionDate} onChange={(event) => updateHeader('transactionDate', event.target.value)} />
+                    <DateTextInput value={header.transactionDate} onChange={(value) => updateHeader('transactionDate', value)} />
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Ledger Book</span>
@@ -1438,7 +1579,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
-                    <input value={header.company} onChange={(event) => updateHeader('company', event.target.value)} />
+                    <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading}>
+                      <option value="">{isLookupsLoading ? 'Loading companies...' : 'Select company'}</option>
+                      {companyRows.map((company) => (
+                        <option key={company.companyId} value={company.description}>
+                          {company.display}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
               </section>

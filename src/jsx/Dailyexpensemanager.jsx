@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getToken } from '../services/authStorage';
 import '../css/Dailyexpensemanager.css';
 
@@ -341,6 +341,104 @@ function formatDateForInput(value) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeDateTextToIso(value) {
+  const text = String(value || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (!slashMatch) {
+    return '';
+  }
+
+  const month = slashMatch[1].padStart(2, '0');
+  const day = slashMatch[2].padStart(2, '0');
+  const year = slashMatch[3];
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  if (
+    date.getFullYear() !== Number(year)
+    || date.getMonth() + 1 !== Number(month)
+    || date.getDate() !== Number(day)
+  ) {
+    return '';
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function DateTextInput({
+  value,
+  onChange,
+  readOnly = false,
+  ariaReadOnly,
+}) {
+  const pickerRef = useRef(null);
+
+  const openPicker = () => {
+    if (readOnly) {
+      return;
+    }
+
+    const picker = pickerRef.current;
+
+    if (!picker) {
+      return;
+    }
+
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+      return;
+    }
+
+    picker.focus();
+  };
+
+  return (
+    <span style={{ position: 'relative', display: 'block' }}>
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="MM/DD/YYYY"
+        value={formatDate(value)}
+        readOnly
+        style={{ fontWeight: 400 }}
+        aria-readonly={ariaReadOnly}
+        onClick={openPicker}
+        onFocus={openPicker}
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+        readOnly={readOnly}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+      />
+    </span>
+  );
+}
+
 function formatMoney(value) {
   const numberValue = Number(String(value || 0).replace(/,/g, '')) || 0;
 
@@ -542,7 +640,14 @@ function getSortValue(row, column) {
   }
 
   if (column.key === 'status') {
-    return String(row.statusValue ?? row.status ?? '').toLowerCase();
+    const normalizedStatusValue = normalizeExpenseStatusValue(row.statusValue ?? row.status);
+    const statusRank = {
+      1: 0,
+      0: 1,
+      2: 2,
+    };
+
+    return statusRank[normalizedStatusValue] ?? 99;
   }
 
   if (column.key === 'date' || column.key === 'receiptDate') {
@@ -1936,7 +2041,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
             </label>
             <label>
               <span>Date</span>
-              <input type="date" value={reportDate} readOnly aria-readonly="true" />
+              <DateTextInput value={reportDate} onChange={() => {}} readOnly ariaReadOnly="true" />
             </label>
             <label className="is-wide">
               <span>Purpose</span>
@@ -1945,11 +2050,11 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
             <div className="etr-report-date-range-panel">
               <label>
                 <span>Date From</span>
-                <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                <DateTextInput value={dateFrom} onChange={setDateFrom} />
               </label>
               <label>
                 <span>Date To</span>
-                <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                <DateTextInput value={dateTo} onChange={setDateTo} />
               </label>
               <div className="etr-report-total-preview">
                 <span>Total Reimbursement</span>

@@ -284,16 +284,17 @@ function getLocalDateId(date) {
 
 function formatDeadlineDate(date) {
   return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     year: 'numeric',
   });
 }
 
 function formatReminderShortDate(date) {
   return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
   });
 }
 

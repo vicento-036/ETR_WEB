@@ -214,6 +214,59 @@ function formatDateForTable(value) {
   return year && month && day ? `${month}/${day}/${year}` : value;
 }
 
+function formatDateForDisplay(value) {
+  if (!value) {
+    return '';
+  }
+
+  const isoMatch = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    return `${isoMatch[2]}/${isoMatch[3]}/${isoMatch[1]}`;
+  }
+
+  return String(value);
+}
+
+function normalizeDateTextToIso(value) {
+  const text = String(value || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (!slashMatch) {
+    return '';
+  }
+
+  const month = slashMatch[1].padStart(2, '0');
+  const day = slashMatch[2].padStart(2, '0');
+  const year = slashMatch[3];
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  if (
+    date.getFullYear() !== Number(year)
+    || date.getMonth() + 1 !== Number(month)
+    || date.getDate() !== Number(day)
+  ) {
+    return '';
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
 function formatTinNo(value) {
   const digits = String(value || '').replace(/\D/g, '');
   const first = digits.slice(0, 3);
@@ -683,26 +736,83 @@ function FormField({
   inputMode,
   onKeyDown,
 }) {
+  const isDateField = type === 'date';
+  const pickerRef = useRef(null);
+
+  const openDatePicker = () => {
+    if (!isDateField || readOnly) {
+      return;
+    }
+
+    const picker = pickerRef.current;
+
+    if (!picker) {
+      return;
+    }
+
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+      return;
+    }
+
+    picker.focus();
+  };
+
   return (
     <label className={`etr-expense-field ${error ? 'has-error' : ''}`}>
       <span>
         {label}
       </span>
       {children || (
-        <input
-          type={type}
-          name={name}
-          value={value}
-          onChange={onChange}
-          readOnly={readOnly}
-          aria-invalid={!!error}
-          aria-required={required}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          inputMode={inputMode}
-          onKeyDown={onKeyDown}
-          required={required}
-        />
+        isDateField ? (
+          <span style={{ position: 'relative', display: 'block' }}>
+            <input
+              type="text"
+              name={name}
+              value={formatDateForDisplay(value)}
+              onClick={openDatePicker}
+              onFocus={openDatePicker}
+              readOnly
+              style={{ fontWeight: 400 }}
+              aria-invalid={!!error}
+              aria-required={required}
+              placeholder="MM/DD/YYYY"
+              inputMode="numeric"
+              required={required}
+            />
+            <input
+              ref={pickerRef}
+              type="date"
+              name={name}
+              value={value}
+              onChange={onChange}
+              tabIndex={-1}
+              aria-hidden="true"
+              readOnly={readOnly}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: 0,
+                pointerEvents: 'none',
+              }}
+            />
+          </span>
+        ) : (
+          <input
+            type={type}
+            name={name}
+            value={value}
+            onChange={onChange}
+            readOnly={readOnly}
+            aria-invalid={!!error}
+            aria-required={required}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            inputMode={inputMode}
+            onKeyDown={onKeyDown}
+            required={required}
+          />
+        )
       )}
       {error ? <small>{error}</small> : null}
     </label>
