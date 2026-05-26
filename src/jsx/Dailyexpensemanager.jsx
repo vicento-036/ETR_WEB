@@ -247,7 +247,7 @@ function getGeneratedNoFromApi(data) {
 }
 
 function normalizeBook(row) {
-  const bookId = getField(row, ['bookId', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
+  const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
   const description = getField(row, ['description', 'Description', 'name', 'Name']);
 
@@ -1604,62 +1604,10 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       setReportNoError('');
       return;
     }
-
-    const controller = new AbortController();
-    const checkExistingReport = async () => {
-      try {
-        const token = getToken();
-        const response = await fetch(buildApiUrl(DAILY_EXPENSE_EXPENSE_REPORT_PREVIEW_ENDPOINT), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            employeeId: currentEmployeeId,
-            fromDate: dateFrom,
-            toDate: dateTo,
-            erNo: "",
-            description: purpose || 'Reimbursement',
-            expenseIDs: getSelectedExpenseIds(),
-          }),
-        });
-
-        if (!response.ok) {
-          setReportNo('');
-          setOriginalReportNo('');
-          setHasExistingJournal(false);
-          return;
-        }
-
-        const data = await response.json();
-        if (controller.signal.aborted) return;
-
-        const resolvedErNo = data.erNo || data.header?.referenceNo || "";
-        const originalErNo = data.originalErNo || data.header?.originalReferenceNo || "";
-        const canPost = data.header?.canPost !== false;
-
-        setOriginalReportNo(originalErNo);
-        if (!canPost) {
-          setReportNo(resolvedErNo);
-          setHasExistingJournal(true);
-        } else {
-          setReportNo('');
-          setHasExistingJournal(false);
-        }
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.error("Error pre-checking existing expense report:", error);
-        }
-      }
-    };
-
-    checkExistingReport();
-
-    return () => {
-      controller.abort();
-    };
+    setReportNo('');
+    setOriginalReportNo('');
+    setHasExistingJournal(false);
+    setReportNoError('');
   }, [dateFrom, dateTo, currentEmployeeId, filteredReportRows.length, purpose]);
 
   useEffect(() => {
@@ -1949,17 +1897,24 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
 
-      await finalizeErForm(resolvedErNo);
-      const journalEntry = await createExpenseReportJournalEntry(resolvedErNo);
+      const finalizeResult = await finalizeErForm(resolvedErNo);
+      const finalizedErNo = String(finalizeResult?.erNo || resolvedErNo).trim();
+
+      if (!finalizedErNo) {
+        throw new Error('Expense report finalization did not return a valid ER number.');
+      }
+
+      const journalEntry = await createExpenseReportJournalEntry(finalizedErNo);
       onJournalEntryCreated?.({
         journalEntryId: journalEntry?.journalEntryId || 0,
         entryNumber: journalEntry?.entryNumber || '',
-        referenceNo: journalEntry?.referenceNo || resolvedErNo,
+        referenceNo: journalEntry?.referenceNo || finalizedErNo,
         referenceType: journalEntry?.referenceType || 32769,
         referenceTypeLabel: 'Expense Report',
         status: 0,
         statusLabel: 'Pending',
       });
+      setReportNo(finalizedErNo);
       setHasExistingJournal(true);
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
