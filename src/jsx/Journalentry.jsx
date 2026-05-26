@@ -7,6 +7,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const COST_UNITS_ENDPOINT = '/api/costunits';
+const SYSTEM_CLASSIFICATIONS_ENDPOINT = '/api/system-classifications/hierarchical';
 const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
 const COMPANY_SEARCH_ENDPOINT = '/api/companies/search';
@@ -173,6 +174,28 @@ function normalizeCostUnit(row) {
   };
 }
 
+function normalizeClassification(row) {
+  const classificationId = getField(row, ['classificationId', 'classificationID', 'ClassificationID', 'ClassificationId', 'id', 'Id']);
+  const code = getField(row, ['code', 'Code']);
+  const description = getField(row, ['description', 'Description', 'name', 'Name']);
+  const hierarchy = getField(row, ['hierarchy', 'Hierarchy']);
+  const display = getField(row, ['display', 'Display']);
+
+  if (!classificationId) {
+    return null;
+  }
+
+  const finalDisplay = display || hierarchy || [code, description].filter(Boolean).join(' - ');
+
+  return {
+    classificationId,
+    code: code || '',
+    description: description || '',
+    hierarchy: hierarchy || '',
+    display: finalDisplay,
+  };
+}
+
 function normalizeBook(row) {
   const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
@@ -261,6 +284,22 @@ function findCostUnit(rows, value) {
     || row.code.toLowerCase() === normalizedValue
     || row.description.toLowerCase() === normalizedValue
     || row.display.toLowerCase() === normalizedValue
+  )) || null;
+}
+
+function findClassification(rows, value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return rows.find((row) => (
+    String(row.classificationId) === String(value)
+    || row.code.toLowerCase() === normalizedValue
+    || row.description.toLowerCase() === normalizedValue
+    || row.display.toLowerCase() === normalizedValue
+    || row.hierarchy.toLowerCase() === normalizedValue
   )) || null;
 }
 
@@ -975,6 +1014,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [companyRows, setCompanyRows] = useState([]);
   const [accountTitleRows, setAccountTitleRows] = useState([]);
   const [costUnitRows, setCostUnitRows] = useState([]);
+  const [classificationRows, setClassificationRows] = useState([]);
   const [auditTrail, setAuditTrail] = useState(createDefaultAuditTrail);
   const [previewAuditAt] = useState(() => new Date());
   const [actionMessage, setActionMessage] = useState('');
@@ -985,12 +1025,32 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
 
-  const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows) => {
+  const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows, nextClassificationRows = classificationRows) => {
     const resolvedBook = findBook(nextBookRows, String(data?.bookID ?? data?.bookId ?? ''));
     const nextLines = Array.isArray(data?.details) && data.details.length > 0
       ? data.details.map((detail, index) => {
         const accountTitle = findAccountTitle(nextAccountTitleRows, String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''));
         const costUnit = findCostUnit(nextCostUnitRows, String(detail?.costUnitID ?? detail?.costUnitId ?? ''));
+
+        const rawRemarks = String(detail?.remarks || '');
+        const parts = rawRemarks.split(' | ');
+        let costCenter = '';
+        let actualRemarks = rawRemarks;
+
+        if (parts.length > 1) {
+          const firstPart = parts[0];
+          const matchedClassification = findClassification(nextClassificationRows, firstPart);
+          if (matchedClassification) {
+            costCenter = matchedClassification.display;
+            actualRemarks = parts.slice(1).join(' | ');
+          }
+        } else if (parts.length === 1 && parts[0]) {
+          const matchedClassification = findClassification(nextClassificationRows, parts[0]);
+          if (matchedClassification) {
+            costCenter = matchedClassification.display;
+            actualRemarks = '';
+          }
+        }
 
         return {
           id: Date.now() + index,
@@ -999,11 +1059,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
           accountCode: accountTitle?.code || '',
           accountTitle: accountTitle?.description || '',
-          subsidiary: '',
-          costCenter: costUnit?.display || '',
+          subsidiary: costUnit?.display || '',
+          costCenter: costCenter,
           debit: Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '',
           credit: Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '',
-          remarks: String(detail?.remarks || ''),
+          remarks: actualRemarks,
         };
       })
       : createDefaultJournalLines();
@@ -1088,13 +1148,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const [employeeResponse, accountTitleResponse, costUnitResponse, bookResponse, companyResponse, referenceResponse] = await Promise.all([
+        const [employeeResponse, accountTitleResponse, costUnitResponse, bookResponse, companyResponse, referenceResponse, classificationResponse] = await Promise.all([
           fetch(buildApiUrl(CURRENT_EMPLOYEE_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(ACCOUNT_TITLES_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(COST_UNITS_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(COMPANY_SEARCH_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(SYSTEM_CLASSIFICATIONS_ENDPOINT), { headers, signal: controller.signal }),
         ]);
 
         const employeeData = await employeeResponse.json().catch(() => ({}));
@@ -1103,6 +1164,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const bookData = await bookResponse.json().catch(() => ({}));
         const companyData = await companyResponse.json().catch(() => ({}));
         const referenceData = await referenceResponse.json().catch(() => ({}));
+        const classificationData = await classificationResponse.json().catch(() => ({}));
 
         if (employeeResponse.ok) {
           const employee = employeeData?.employee || employeeData?.data || employeeData;
@@ -1120,6 +1182,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           throw new Error(costUnitData?.message || 'Unable to load cost unit options.');
         }
 
+        if (!classificationResponse.ok) {
+          throw new Error(classificationData?.message || 'Unable to load classification options.');
+        }
+
         if (!bookResponse.ok) {
           throw new Error(bookData?.message || 'Unable to load ledger book options.');
         }
@@ -1134,6 +1200,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
         const nextAccountTitleRows = getApiCollection(accountTitleData).map(normalizeAccountTitle).filter(Boolean);
         const nextCostUnitRows = getApiCollection(costUnitData).map(normalizeCostUnit).filter(Boolean);
+        const nextClassificationRows = getApiCollection(classificationData).map(normalizeClassification).filter(Boolean);
         const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
         const nextCompanyRows = getApiCollection(companyData).map(normalizeCompany).filter(Boolean);
         const nextReferenceRows = getApiCollection(referenceData)
@@ -1143,6 +1210,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
         setAccountTitleRows(nextAccountTitleRows);
         setCostUnitRows(nextCostUnitRows);
+        setClassificationRows(nextClassificationRows);
         setBookRows(nextBookRows);
         setCompanyRows(nextCompanyRows);
         setReferenceRows(nextReferenceRows);
@@ -1194,7 +1262,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   }, [selectedExpense]);
 
   useEffect(() => {
-    if (selectedJournalEntry || !header.referenceId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
+    if (selectedJournalEntry || !header.referenceId || accountTitleRows.length === 0 || costUnitRows.length === 0 || classificationRows.length === 0) {
       return;
     }
 
@@ -1207,12 +1275,12 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     });
 
     return () => controller.abort();
-  }, [selectedJournalEntry, header.referenceId, accountTitleRows, costUnitRows, bookRows]);
+  }, [selectedJournalEntry, header.referenceId, accountTitleRows, costUnitRows, classificationRows, bookRows]);
 
   useEffect(() => {
     const journalEntryId = selectedJournalEntry?.journalEntryId || selectedJournalEntry?.journalEntryID || 0;
 
-    if (!journalEntryId || accountTitleRows.length === 0 || costUnitRows.length === 0) {
+    if (!journalEntryId || accountTitleRows.length === 0 || costUnitRows.length === 0 || classificationRows.length === 0) {
       return;
     }
 
@@ -1225,7 +1293,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     });
 
     return () => controller.abort();
-  }, [selectedJournalEntry, accountTitleRows, costUnitRows, bookRows]);
+  }, [selectedJournalEntry, accountTitleRows, costUnitRows, classificationRows, bookRows]);
 
   const auditUserName = getAuditEmployeeName(employeeInfo);
   const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
@@ -1313,14 +1381,22 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         }
       }
 
-      if (field === 'costCenter' || field === 'costUnitId') {
+      if (field === 'subsidiary' || field === 'costUnitId') {
         const resolvedCostUnit = findCostUnit(costUnitRows, field === 'costUnitId' ? value : nextLine[field]);
 
         if (resolvedCostUnit) {
           nextLine.costUnitId = resolvedCostUnit.costUnitId;
-          nextLine.costCenter = resolvedCostUnit.display;
-        } else if (field === 'costCenter') {
+          nextLine.subsidiary = resolvedCostUnit.display;
+        } else if (field === 'subsidiary') {
           nextLine.costUnitId = '';
+        }
+      }
+
+      if (field === 'costCenter') {
+        const resolvedClassification = findClassification(classificationRows, nextLine[field]);
+
+        if (resolvedClassification) {
+          nextLine.costCenter = resolvedClassification.display;
         }
       }
 
@@ -1335,6 +1411,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       || parseAmount(line.debit) > 0
       || parseAmount(line.credit) > 0
       || String(line.remarks || '').trim()
+      || String(line.subsidiary || '').trim()
       || String(line.costCenter || '').trim()
     ));
 
@@ -1367,7 +1444,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         Debit: parseAmount(line.debit),
         Credit: parseAmount(line.credit),
         CostUnitID: line.costUnitId ? Number(line.costUnitId) : null,
-        Remarks: [line.subsidiary, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
+        Remarks: [line.costCenter, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
       })),
     };
   };
@@ -1712,9 +1789,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                               ? 'etr-journal-account-code-options'
                               : column.key === 'accountTitle'
                                 ? 'etr-journal-account-title-options'
-                                : column.key === 'costCenter'
+                                : column.key === 'subsidiary'
                                   ? 'etr-journal-cost-unit-options'
-                                  : undefined
+                                  : column.key === 'costCenter'
+                                    ? 'etr-journal-classification-options'
+                                    : undefined
                           }
                         />
                       </td>
@@ -1736,6 +1815,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             <datalist id="etr-journal-cost-unit-options">
               {costUnitRows.map((row) => (
                 <option key={row.costUnitId} value={row.display}>{row.code}</option>
+              ))}
+            </datalist>
+            <datalist id="etr-journal-classification-options">
+              {classificationRows.map((row) => (
+                <option key={row.classificationId} value={row.display}>{row.code}</option>
               ))}
             </datalist>
           </div>
