@@ -247,7 +247,7 @@ function getGeneratedNoFromApi(data) {
 }
 
 function normalizeBook(row) {
-  const bookId = getField(row, ['bookId', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
+  const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
   const description = getField(row, ['description', 'Description', 'name', 'Name']);
 

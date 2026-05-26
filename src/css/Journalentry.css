@@ -324,9 +324,11 @@
 
 .etr-journal-manager .etr-journal-table th,
 .etr-journal-manager .etr-journal-table td {
-  overflow: hidden;
+  overflow: visible;
   padding: 13px 12px;
-  text-overflow: ellipsis;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(1) {
@@ -334,7 +336,7 @@
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(2) {
-  width: 96px;
+  width: 160px;
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(3),
@@ -390,8 +392,9 @@
 
 .etr-journal-sort-button span:first-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .etr-journal-sort-indicator {

@@ -174,7 +174,7 @@ function normalizeCostUnit(row) {
 }
 
 function normalizeBook(row) {
-  const bookId = getField(row, ['bookId', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
+  const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
   const description = getField(row, ['description', 'Description', 'name', 'Name']);
 
@@ -305,10 +305,14 @@ function normalizeApiJournalEntry(row, bookRows = []) {
   const referenceNo = getField(row, ['referenceNo', 'ReferenceNo']);
   const referenceTypeLabel = getField(row, ['referenceTypeLabel', 'ReferenceTypeLabel']) || 'Journal Entry';
   const statusLabel = getField(row, ['statusLabel', 'StatusLabel']) || 'Pending';
-  const bookId = getField(row, ['bookId', 'BookID', 'BookId']);
+  const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'BookOfAccountID'])
+    || getField(row?.book, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'BookOfAccountID', 'id', 'Id'])
+    || getField(row?.bookOfAccount, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'BookOfAccountID', 'id', 'Id']);
   const mappedBook = findBook(bookRows, bookId);
   const bookLabel = mappedBook?.display
     || getField(row, ['ledgerBook', 'LedgerBook', 'bookCode', 'BookCode', 'bookDescription', 'BookDescription'])
+    || getField(row?.book, ['code', 'Code', 'description', 'Description', 'name', 'Name'])
+    || getField(row?.bookOfAccount, ['code', 'Code', 'description', 'Description', 'name', 'Name'])
     || (referenceTypeLabel === 'Journal Entry' ? 'Journal Voucher' : '');
 
   return {
@@ -320,7 +324,7 @@ function normalizeApiJournalEntry(row, bookRows = []) {
     entryDate: formatDisplayDate(entryDate),
     entryDateValue: entryDate,
     referenceNumber: referenceNo,
-    referenceType: referenceTypeLabel,
+    referenceType: 'Journal Entry',
     remarks: getField(row, ['remarks', 'Remarks']),
     debitTotal: Number(row?.debitTotal ?? row?.DebitTotal ?? 0),
     creditTotal: Number(row?.creditTotal ?? row?.CreditTotal ?? 0),
