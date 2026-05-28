@@ -55,7 +55,7 @@ function createDefaultJournalHeader() {
     bookId: '',
     ledgerBook: '',
     referenceId: '',
-    referenceType: 'Daily Expense',
+    referenceType: '',
     referenceNo: '',
     company: '',
     remarks: '',
@@ -138,6 +138,28 @@ function getField(source, fieldNames) {
   }
 
   return '';
+}
+
+function getJournalEntryReferenceTypeLabel(data, fallback = '') {
+  const referenceTypeLabel = getField(data, [
+    'referenceTypeLabel',
+    'ReferenceTypeLabel',
+    'referenceTypeName',
+    'ReferenceTypeName',
+    'referenceTypeDescription',
+    'ReferenceTypeDescription',
+  ]);
+  const rawReferenceType = data?.referenceType ?? data?.ReferenceType;
+
+  if (referenceTypeLabel.toLowerCase() === 'expense report') {
+    return 'Journal Entry';
+  }
+
+  if (Number(rawReferenceType) === 32768) {
+    return 'Journal Entry';
+  }
+
+  return referenceTypeLabel || fallback;
 }
 
 function normalizeAccountTitle(row) {
@@ -1035,20 +1057,17 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const rawRemarks = String(detail?.remarks || '');
         const parts = rawRemarks.split(' | ');
         let costCenter = '';
-        let actualRemarks = rawRemarks;
 
         if (parts.length > 1) {
           const firstPart = parts[0];
           const matchedClassification = findClassification(nextClassificationRows, firstPart);
           if (matchedClassification) {
             costCenter = matchedClassification.display;
-            actualRemarks = parts.slice(1).join(' | ');
           }
         } else if (parts.length === 1 && parts[0]) {
           const matchedClassification = findClassification(nextClassificationRows, parts[0]);
           if (matchedClassification) {
             costCenter = matchedClassification.display;
-            actualRemarks = '';
           }
         }
 
@@ -1063,7 +1082,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           costCenter: costCenter,
           debit: Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '',
           credit: Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '',
-          remarks: actualRemarks,
+          remarks: '',
         };
       })
       : createDefaultJournalLines();
@@ -1076,7 +1095,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       bookId: resolvedBook?.bookId || String(data?.bookID ?? data?.bookId ?? current.bookId),
       ledgerBook: resolvedBook?.display || current.ledgerBook,
       referenceId: Number(data?.referenceType ?? data?.ReferenceType) === 32768 ? String(data?.referenceID ?? data?.referenceId ?? '') : '',
-      referenceType: getField(data, ['referenceTypeLabel', 'ReferenceTypeLabel']) || current.referenceType,
+      referenceType: getJournalEntryReferenceTypeLabel(data, current.referenceType),
       referenceNo: String(data?.referenceNo || ''),
       remarks: String(data?.remarks || ''),
     }));
@@ -1257,7 +1276,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       ...current,
       referenceId: selectedReferenceId || current.referenceId,
       referenceNo: selectedReferenceNo || current.referenceNo,
-      referenceType: 'Daily Expense',
+      referenceType: '',
     }));
   }, [selectedExpense]);
 
@@ -1344,7 +1363,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           ...current,
           referenceId: value,
           referenceNo: selectedReference?.referenceNo || '',
-          referenceType: 'Daily Expense',
+          referenceType: '',
         };
       }
 
@@ -1410,7 +1429,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       || String(line.accountTitle || '').trim()
       || parseAmount(line.debit) > 0
       || parseAmount(line.credit) > 0
-      || String(line.remarks || '').trim()
       || String(line.subsidiary || '').trim()
       || String(line.costCenter || '').trim()
     ));
@@ -1824,10 +1842,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             </datalist>
           </div>
 
-          <label className="etr-journal-field etr-journal-details-remarks">
-            <span>Remarks</span>
-            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} />
-          </label>
         </section>
       </div>
     </div>
