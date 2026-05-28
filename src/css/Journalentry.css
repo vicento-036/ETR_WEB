@@ -901,16 +901,6 @@
   text-transform: uppercase;
 }
 
-.etr-journal-reference-grid .etr-journal-field {
-  grid-template-rows: 28px 36px;
-  align-items: start;
-}
-
-.etr-journal-reference-grid .etr-journal-field > span {
-  align-self: end;
-  line-height: 1.15;
-}
-
 .etr-journal-field input,
 .etr-journal-field select,
 .etr-journal-field textarea,
