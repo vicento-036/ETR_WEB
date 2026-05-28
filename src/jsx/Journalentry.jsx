@@ -12,6 +12,7 @@ const DAILY_EXPENSE_ENDPOINT = '/api/daily-expense';
 const BOOK_OF_ACCOUNTS_ENDPOINT = '/api/bookofaccounts';
 const COMPANY_SEARCH_ENDPOINT = '/api/companies/search';
 const JOURNAL_ENTRY_ENDPOINT = '/api/journal-entry';
+const JOURNAL_ENTRY_PERMISSIONS_ENDPOINT = '/api/journal-entry/permissions';
 const JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT = '/api/journal-entry/daily-expense';
 const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
 
@@ -904,6 +905,65 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [bookRows, setBookRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [permissions, setPermissions] = useState({
+    canCreate: false,
+    canDelete: false,
+    canEdit: false,
+    canSearch: false,
+    canApprove: false,
+    canPrint: false,
+  });
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadPermissions = async () => {
+      try {
+        const response = await fetch(buildApiUrl(JOURNAL_ENTRY_PERMISSIONS_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setPermissions({
+            canCreate: false,
+            canDelete: false,
+            canEdit: false,
+            canSearch: false,
+            canApprove: false,
+            canPrint: false,
+          });
+          return;
+        }
+
+        setPermissions({
+          canCreate: data.canCreate ?? false,
+          canDelete: data.canDelete ?? false,
+          canEdit: data.canEdit ?? false,
+          canSearch: data.canSearch ?? false,
+          canApprove: data.canApprove ?? false,
+          canPrint: data.canPrint ?? false,
+        });
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setPermissions({
+            canCreate: false,
+            canDelete: false,
+            canEdit: false,
+            canSearch: false,
+            canApprove: false,
+            canPrint: false,
+          });
+        }
+      }
+    };
+
+    loadPermissions();
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -1014,7 +1074,9 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         </div>
 
         <div className="etr-journal-actions">
-          <button type="button" className="is-primary" onClick={onNewEntry}>New Journal Entry</button>
+          {permissions.canCreate ? (
+            <button type="button" className="is-primary" onClick={onNewEntry}>New Journal Entry</button>
+          ) : null}
         </div>
       </div>
 
@@ -1033,6 +1095,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Entry no, reference, book, or status"
+              disabled={!permissions.canSearch}
             />
           </label>
         </div>
@@ -1130,6 +1193,65 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [lines, setLines] = useState(createDefaultJournalLines);
   const [lineLookup, setLineLookup] = useState(null);
   const [lineLookupSearch, setLineLookupSearch] = useState('');
+  const [permissions, setPermissions] = useState({
+    canCreate: false,
+    canDelete: false,
+    canEdit: false,
+    canSearch: false,
+    canApprove: false,
+    canPrint: false,
+  });
+
+  useEffect(() => {
+    const token = getToken();
+    const controller = new AbortController();
+
+    const loadPermissions = async () => {
+      try {
+        const response = await fetch(buildApiUrl(JOURNAL_ENTRY_PERMISSIONS_ENDPOINT), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setPermissions({
+            canCreate: false,
+            canDelete: false,
+            canEdit: false,
+            canSearch: false,
+            canApprove: false,
+            canPrint: false,
+          });
+          return;
+        }
+
+        setPermissions({
+          canCreate: data.canCreate ?? false,
+          canDelete: data.canDelete ?? false,
+          canEdit: data.canEdit ?? false,
+          canSearch: data.canSearch ?? false,
+          canApprove: data.canApprove ?? false,
+          canPrint: data.canPrint ?? false,
+        });
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          setPermissions({
+            canCreate: false,
+            canDelete: false,
+            canEdit: false,
+            canSearch: false,
+            canApprove: false,
+            canPrint: false,
+          });
+        }
+      }
+    };
+
+    loadPermissions();
+
+    return () => controller.abort();
+  }, [user]);
 
   const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows, nextClassificationRows = classificationRows) => {
     const resolvedBook = findBook(nextBookRows, String(data?.bookID ?? data?.bookId ?? ''));
@@ -1297,7 +1419,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           throw new Error(companyData?.message || 'Unable to load company options.');
         }
 
-        if (!referenceResponse.ok) {
+        if (!referenceResponse.ok && referenceResponse.status !== 403) {
           throw new Error(referenceData?.message || 'Unable to load daily expense references.');
         }
 
@@ -1306,10 +1428,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const nextClassificationRows = getApiCollection(classificationData).map(normalizeClassification).filter(Boolean);
         const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
         const nextCompanyRows = getApiCollection(companyData).map(normalizeCompany).filter(Boolean);
-        const nextReferenceRows = getApiCollection(referenceData)
+        const nextReferenceRows = referenceResponse.ok ? getApiCollection(referenceData)
           .map(normalizeDailyExpenseReference)
           .filter(Boolean)
-          .filter((row) => row.status.toLowerCase() === 'approved');
+          .filter((row) => row.status.toLowerCase() === 'approved') : [];
 
         setAccountTitleRows(nextAccountTitleRows);
         setCostUnitRows(nextCostUnitRows);
@@ -1617,9 +1739,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       || String(line.costCenter || '').trim()
     ));
 
-    if (!header.referenceId || !header.referenceNo) {
-      throw new Error('Select an approved daily expense reference first.');
-    }
+    const isDailyExpenseEntry = Boolean(header.referenceId);
+
+      if (!header.referenceNo) {
+        throw new Error('Reference no. is required.');
+      }
 
     if (!header.bookId) {
       throw new Error('Select a valid ledger book first.');
@@ -1636,18 +1760,22 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     }
 
     return {
-      ReferenceID: Number(header.referenceId),
-      ReferenceNo: header.referenceNo.trim(),
-      EntryDate: header.transactionDate,
-      BookID: Number(header.bookId),
-      Remarks: header.remarks.trim(),
-      Details: activeLines.map((line) => ({
-        AccountTitleID: Number(line.accountTitleId),
-        Debit: parseAmount(line.debit),
-        Credit: parseAmount(line.credit),
-        CostUnitID: line.costUnitId ? Number(line.costUnitId) : null,
-        Remarks: [line.costCenter, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
-      })),
+      endpoint: isDailyExpenseEntry ? JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT : JOURNAL_ENTRY_ENDPOINT,
+      isDailyExpenseEntry,
+      payload: {
+        ...(isDailyExpenseEntry ? { ReferenceID: Number(header.referenceId) } : {}),
+        ReferenceNo: header.referenceNo.trim(),
+        EntryDate: header.transactionDate,
+        BookID: Number(header.bookId),
+        Remarks: header.remarks.trim(),
+        Details: activeLines.map((line) => ({
+          AccountTitleID: Number(line.accountTitleId),
+          Debit: parseAmount(line.debit),
+          Credit: parseAmount(line.credit),
+          CostUnitID: line.costUnitId ? Number(line.costUnitId) : null,
+          Remarks: [line.costCenter, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
+        })),
+      },
     };
   };
 
@@ -1674,9 +1802,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     setIsSubmitting(true);
 
     try {
-      const payload = buildJournalPayload();
+      const { endpoint, payload, isDailyExpenseEntry } = buildJournalPayload();
       const token = getToken();
-      const response = await fetch(buildApiUrl(JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT), {
+      const response = await fetch(buildApiUrl(endpoint), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1695,6 +1823,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         ...header,
         status: 'Pending',
         transactionNo: String(data?.entryNumber || ''),
+        referenceNo: String(data?.referenceNo ?? header.referenceNo),
+        referenceType: isDailyExpenseEntry ? 'Journal Entry' : '',
       };
 
       setHeader(savedHeader);
@@ -1706,8 +1836,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       clearJournalDraftStorage();
       setActionMessage(
         mode === 'post'
-          ? 'Journal entry saved to WebAPI as Pending. No separate posting endpoint exists yet in the current API.'
-          : 'Journal entry saved to WebAPI successfully.',
+          ? 'Journal entry saved successfully.'
+          : 'Journal entry saved successfully.',
       );
       onSaved?.();
     } catch (error) {
@@ -1775,27 +1905,27 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           <span>Prepare balanced debit and credit lines for ledger posting.</span>
         </div>
 
-        <div className="etr-journal-actions">
-          <button
-            type="button"
-            className="is-primary"
-            onClick={handleSaveDraft}
-            disabled={isSubmitting || isLocked}
-          >
-            {isSubmitting ? 'Saving...' : 'Save Draft'}
-          </button>
-          <button
-            type="button"
-            onClick={handlePostToLedger}
-            disabled={isSubmitting || isLocked || !isBalanced}
-            title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
-          >
-            {isSubmitting ? 'Posting...' : 'Post to Ledger'}
-          </button>
-          <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting}>
-            Print Voucher
-          </button>
-        </div>
+      <div className="etr-journal-actions">
+        <button
+          type="button"
+          className="is-primary"
+          onClick={handleSaveDraft}
+          disabled={isSubmitting || isLocked || !permissions.canCreate}
+        >
+          {isSubmitting ? 'Saving...' : 'Save Draft'}
+        </button>
+        <button
+          type="button"
+          onClick={handlePostToLedger}
+          disabled={isSubmitting || isLocked || !isBalanced || !permissions.canApprove}
+          title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+        >
+          {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+        </button>
+        <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+          Print Voucher
+        </button>
+      </div>
       </div>
 
       {actionMessage ? React.createElement('div', { className: 'etr-journal-action-message' }, actionMessage) : null}
@@ -1842,6 +1972,19 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   <label className="etr-journal-field">
                     <span>Reference Type</span>
                     <input value={header.referenceType} readOnly />
+                  </label>
+                  <label className="etr-journal-field">
+                    <span>Reference No.</span>
+                    <input value={header.referenceNo} onChange={(event) => updateHeader('referenceNo', event.target.value)} />
+                  </label>
+                  <label className="etr-journal-field etr-journal-reference-select-field">
+                    <span>Daily Expense Reference</span>
+                    <select value={header.referenceId} onChange={(event) => updateHeader('referenceId', event.target.value)} disabled={isLookupsLoading}>
+                      <option value="">{isLookupsLoading ? 'Loading references...' : 'Select approved daily expense'}</option>
+                      {referenceRows.map((reference) => (
+                        <option key={reference.expenseId} value={reference.expenseId}>{getReferenceOptionLabel(reference)}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="etr-journal-field">
                     <span>Reference No</span>
@@ -1941,7 +2084,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               <span>{lines.length} line{lines.length === 1 ? '' : 's'}</span>
             </div>
             <div className="etr-journal-line-actions">
-              <button type="button" onClick={deleteSelected}>Delete Selected</button>
+              {permissions.canDelete ? (
+                <button type="button" onClick={deleteSelected}>Delete Selected</button>
+              ) : null}
             </div>
           </div>
 

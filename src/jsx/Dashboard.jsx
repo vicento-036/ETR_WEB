@@ -630,7 +630,6 @@ function DashboardContent({
         user={user}
         selectedExpense={selectedExpense}
         selectedJournalEntry={selectedJournalEntry}
-        onSaved={() => onNavigate('journal-manager')}
       />
     );
   }
