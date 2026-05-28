@@ -16,6 +16,15 @@ const JOURNAL_ENTRY_PERMISSIONS_ENDPOINT = '/api/journal-entry/permissions';
 const JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT = '/api/journal-entry/daily-expense';
 const JOURNAL_SEQUENCE_STORAGE_KEY = 'etr.journalEntry.sequence';
 
+const defaultJournalPermissions = {
+  canCreate: false,
+  canDelete: false,
+  canEdit: false,
+  canSearch: false,
+  canApprove: false,
+  canPrint: false,
+};
+
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
 }
@@ -136,6 +145,119 @@ function getApiCollection(data) {
   }
 
   return [];
+}
+
+function getPermissionBoolean(source, fieldNames, fallback = false) {
+  for (const fieldName of fieldNames) {
+    const value = source?.[fieldName];
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const normalized = value.trim().toLowerCase();
+
+      if (['true', '1', 'yes', 'y'].includes(normalized)) {
+        return true;
+      }
+
+      if (['false', '0', 'no', 'n'].includes(normalized)) {
+        return false;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function normalizePermissionKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getPermissionFromCollection(source, aliases, fallback = false) {
+  const rows = Array.isArray(source) ? source : getApiCollection(source);
+  const normalizedAliases = aliases.map(normalizePermissionKey).filter(Boolean);
+
+  for (const row of rows) {
+    if (typeof row === 'string') {
+      const normalizedRow = normalizePermissionKey(row);
+
+      if (normalizedAliases.some((alias) => normalizedRow.includes(alias))) {
+        return true;
+      }
+
+      continue;
+    }
+
+    const permissionName = getField(row, [
+      'permission',
+      'Permission',
+      'permissionName',
+      'PermissionName',
+      'name',
+      'Name',
+      'code',
+      'Code',
+      'action',
+      'Action',
+      'claim',
+      'Claim',
+    ]);
+    const normalizedName = normalizePermissionKey(permissionName);
+
+    if (!normalizedAliases.some((alias) => normalizedName.includes(alias))) {
+      continue;
+    }
+
+    return getPermissionBoolean(row, [
+      'isAllowed',
+      'IsAllowed',
+      'allowed',
+      'Allowed',
+      'hasAccess',
+      'HasAccess',
+      'enabled',
+      'Enabled',
+      'value',
+      'Value',
+      'canAccess',
+      'CanAccess',
+    ], true);
+  }
+
+  return fallback;
+}
+
+function getJournalPermission(source, aliases, fullAccess = false) {
+  return getPermissionBoolean(source, aliases, getPermissionFromCollection(source, aliases, fullAccess));
+}
+
+function normalizeJournalPermissions(data) {
+  const source = data?.permissions || data?.Permissions || data?.data || data?.Data || data || {};
+  const fullAccess = getPermissionBoolean(source, [
+    'fullAccess',
+    'FullAccess',
+    'allAccess',
+    'AllAccess',
+    'isAdmin',
+    'IsAdmin',
+    'canAccess',
+    'CanAccess',
+  ]);
+
+  return {
+    canCreate: getJournalPermission(source, ['canCreate', 'CanCreate', 'create', 'Create', 'add', 'Add', 'new', 'New'], fullAccess),
+    canDelete: getJournalPermission(source, ['canDelete', 'CanDelete', 'delete', 'Delete', 'remove', 'Remove'], fullAccess),
+    canEdit: getJournalPermission(source, ['canEdit', 'CanEdit', 'edit', 'Edit', 'canUpdate', 'CanUpdate', 'update', 'Update'], fullAccess),
+    canSearch: getJournalPermission(source, ['canSearch', 'CanSearch', 'search', 'Search', 'canView', 'CanView', 'canRead', 'CanRead', 'view', 'View'], fullAccess),
+    canApprove: getJournalPermission(source, ['canApprove', 'CanApprove', 'approve', 'Approve', 'canPost', 'CanPost', 'post', 'Post', 'canPostToLedger', 'CanPostToLedger'], fullAccess),
+    canPrint: getJournalPermission(source, ['canPrint', 'CanPrint', 'print', 'Print', 'canPrintVoucher', 'CanPrintVoucher', 'voucher', 'Voucher'], fullAccess),
+  };
 }
 
 function getField(source, fieldNames) {
@@ -905,14 +1027,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [bookRows, setBookRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [permissions, setPermissions] = useState({
-    canCreate: false,
-    canDelete: false,
-    canEdit: false,
-    canSearch: false,
-    canApprove: false,
-    canPrint: false,
-  });
+  const [permissions, setPermissions] = useState(defaultJournalPermissions);
 
   useEffect(() => {
     const token = getToken();
@@ -927,35 +1042,14 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          setPermissions({
-            canCreate: false,
-            canDelete: false,
-            canEdit: false,
-            canSearch: false,
-            canApprove: false,
-            canPrint: false,
-          });
+          setPermissions(defaultJournalPermissions);
           return;
         }
 
-        setPermissions({
-          canCreate: data.canCreate ?? false,
-          canDelete: data.canDelete ?? false,
-          canEdit: data.canEdit ?? false,
-          canSearch: data.canSearch ?? false,
-          canApprove: data.canApprove ?? false,
-          canPrint: data.canPrint ?? false,
-        });
+        setPermissions(normalizeJournalPermissions(data));
       } catch (error) {
         if (error.name !== 'AbortError') {
-          setPermissions({
-            canCreate: false,
-            canDelete: false,
-            canEdit: false,
-            canSearch: false,
-            canApprove: false,
-            canPrint: false,
-          });
+          setPermissions(defaultJournalPermissions);
         }
       }
     };
@@ -1074,9 +1168,15 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         </div>
 
         <div className="etr-journal-actions">
-          {permissions.canCreate ? (
-            <button type="button" className="is-primary" onClick={onNewEntry}>New Journal Entry</button>
-          ) : null}
+          <button
+            type="button"
+            className="is-primary"
+            onClick={onNewEntry}
+            disabled={!permissions.canCreate}
+            title={!permissions.canCreate ? 'Create permission is required' : undefined}
+          >
+            New Journal Entry
+          </button>
         </div>
       </div>
 
@@ -1193,14 +1293,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [lines, setLines] = useState(createDefaultJournalLines);
   const [lineLookup, setLineLookup] = useState(null);
   const [lineLookupSearch, setLineLookupSearch] = useState('');
-  const [permissions, setPermissions] = useState({
-    canCreate: false,
-    canDelete: false,
-    canEdit: false,
-    canSearch: false,
-    canApprove: false,
-    canPrint: false,
-  });
+  const [permissions, setPermissions] = useState(defaultJournalPermissions);
 
   useEffect(() => {
     const token = getToken();
@@ -1215,35 +1308,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          setPermissions({
-            canCreate: false,
-            canDelete: false,
-            canEdit: false,
-            canSearch: false,
-            canApprove: false,
-            canPrint: false,
-          });
+          setPermissions(defaultJournalPermissions);
           return;
         }
 
-        setPermissions({
-          canCreate: data.canCreate ?? false,
-          canDelete: data.canDelete ?? false,
-          canEdit: data.canEdit ?? false,
-          canSearch: data.canSearch ?? false,
-          canApprove: data.canApprove ?? false,
-          canPrint: data.canPrint ?? false,
-        });
+        setPermissions(normalizeJournalPermissions(data));
       } catch (error) {
         if (error.name !== 'AbortError') {
-          setPermissions({
-            canCreate: false,
-            canDelete: false,
-            canEdit: false,
-            canSearch: false,
-            canApprove: false,
-            canPrint: false,
-          });
+          setPermissions(defaultJournalPermissions);
         }
       }
     };
@@ -1544,6 +1616,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const isPosted = normalizedStatus === 'Posted';
   const isCancelled = normalizedStatus === 'Cancelled';
   const isLocked = isPosted || isCancelled;
+  const selectedLineCount = lines.filter((line) => line.selected).length;
 
   const clearActionFeedback = () => {
     setActionMessage('');
@@ -1890,6 +1963,23 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   };
 
   const deleteSelected = () => {
+    clearActionFeedback();
+
+    if (!permissions.canDelete) {
+      setActionError('You do not have permission to delete journal detail rows.');
+      return;
+    }
+
+    if (isLocked) {
+      setActionError('Posted or cancelled journal entries cannot be modified.');
+      return;
+    }
+
+    if (selectedLineCount === 0) {
+      setActionError('Select at least one journal detail row to delete.');
+      return;
+    }
+
     setLines((current) => {
       const next = current.filter((line) => !line.selected);
       return next.length > 0 ? next : current;
@@ -1917,7 +2007,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         <button
           type="button"
           onClick={handlePostToLedger}
-          disabled={isSubmitting || isLocked || !isBalanced || !permissions.canApprove}
+          disabled={isSubmitting || isLocked || !permissions.canApprove}
           title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
         >
           {isSubmitting ? 'Posting...' : 'Post to Ledger'}
@@ -2071,9 +2161,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               <span>{lines.length} line{lines.length === 1 ? '' : 's'}</span>
             </div>
             <div className="etr-journal-line-actions">
-              {permissions.canDelete ? (
-                <button type="button" onClick={deleteSelected}>Delete Selected</button>
-              ) : null}
+              <button
+                type="button"
+                onClick={deleteSelected}
+                disabled={isSubmitting || isLocked || !permissions.canDelete || selectedLineCount === 0}
+                title={selectedLineCount === 0 ? 'Select at least one row to delete' : undefined}
+              >
+                Delete Selected
+              </button>
             </div>
           </div>
 
