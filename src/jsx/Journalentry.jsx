@@ -1843,16 +1843,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                     <span>Reference Type</span>
                     <input value={header.referenceType} readOnly />
                   </label>
-                  <label className="etr-journal-field etr-journal-reference-select-field">
-                    <span>Daily Expense Reference</span>
-                    <select value={header.referenceId} onChange={(event) => updateHeader('referenceId', event.target.value)} disabled={isLookupsLoading}>
-                      <option value="">{isLookupsLoading ? 'Loading references...' : 'Select approved daily expense'}</option>
-                      {referenceRows.map((reference) => (
-                        <option key={reference.expenseId} value={reference.expenseId}>{getReferenceOptionLabel(reference)}</option>
-                      ))}
-                    </select>
-                  </label>
                   <label className="etr-journal-field">
+                    <span>Reference No</span>
+                    <input value={header.referenceNo} readOnly />
+                  </label>
+                  <label className="etr-journal-field is-wide">
                     <span>Company</span>
                     <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading}>
                       <option value="">{isLookupsLoading ? 'Loading companies...' : 'Select company'}</option>
@@ -1862,10 +1857,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label className="etr-journal-field">
-                    <span>Reference No</span>
-                    <input value={header.referenceNo} readOnly />
                   </label>
                 </div>
               </section>
