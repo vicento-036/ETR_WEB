@@ -1986,10 +1986,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                       ))}
                     </select>
                   </label>
-                  <label className="etr-journal-field">
-                    <span>Reference No</span>
-                    <input value={header.referenceNo} readOnly />
-                  </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
                     <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading}>

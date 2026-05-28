@@ -911,6 +911,12 @@
   line-height: 1.15;
 }
 
+.etr-journal-reference-select-field > span {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  transform: translateY(-6px);
+}
+
 .etr-journal-field input,
 .etr-journal-field select,
 .etr-journal-field textarea,
