@@ -47,6 +47,15 @@ function createDefaultJournalLines() {
   ];
 }
 
+function createNextJournalLineId(lines) {
+  const highestLineId = lines.reduce((highest, line) => {
+    const lineId = Number(line.id);
+    return Number.isFinite(lineId) ? Math.max(highest, lineId) : highest;
+  }, Date.now());
+
+  return highestLineId + 1;
+}
+
 function createDefaultJournalHeader() {
   return {
     status: '',
@@ -419,6 +428,79 @@ function getStatusClass(status) {
   }
 
   return `is-${normalized.toLowerCase()}`;
+}
+
+function isLineLookupField(field) {
+  return field === 'accountCode'
+    || field === 'accountTitle'
+    || field === 'subsidiary'
+    || field === 'costCenter';
+}
+
+function matchesLookupSearch(row, searchTerm) {
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  return [
+    row.code,
+    row.description,
+    row.display,
+    row.hierarchy,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedSearch));
+}
+
+function JournalLineLookupModal({ lookup, searchTerm, onSearchChange, onSelect, onClose }) {
+  if (!lookup) {
+    return null;
+  }
+
+  const filteredRows = lookup.rows.filter((row) => matchesLookupSearch(row, searchTerm));
+
+  return (
+    <div className="etr-journal-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-journal-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-journal-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-journal-lookup-head">
+          <div>
+            <h2 id="etr-journal-lookup-title">{lookup.title}</h2>
+          </div>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <input
+          className="etr-journal-lookup-search"
+          value={searchTerm}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={lookup.placeholder}
+          autoFocus
+        />
+
+        <div className="etr-journal-lookup-list">
+          {filteredRows.length > 0 ? filteredRows.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="etr-journal-lookup-option"
+              onClick={() => onSelect(row)}
+            >
+              <strong>{row.primary}</strong>
+              <span>{row.secondary}</span>
+            </button>
+          )) : (
+            <div className="etr-journal-lookup-empty">No matching records found.</div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function getJournalSortValue(row, column) {
@@ -1046,6 +1128,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
+  const [lineLookup, setLineLookup] = useState(null);
+  const [lineLookupSearch, setLineLookupSearch] = useState('');
 
   const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows, nextClassificationRows = classificationRows) => {
     const resolvedBook = findBook(nextBookRows, String(data?.bookID ?? data?.bookId ?? ''));
@@ -1381,46 +1465,146 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   };
 
   const updateLine = (lineId, field, value) => {
-    setLines((current) => current.map((line) => {
-      if (line.id !== lineId) {
-        return line;
-      }
-
-      const nextLine = { ...line, [field]: value };
-
-      if (field === 'accountCode' || field === 'accountTitle' || field === 'accountTitleId') {
-        const resolvedAccountTitle = findAccountTitle(accountTitleRows, field === 'accountTitleId' ? value : nextLine[field]);
-
-        if (resolvedAccountTitle) {
-          nextLine.accountTitleId = resolvedAccountTitle.accountTitleId;
-          nextLine.accountCode = resolvedAccountTitle.code;
-          nextLine.accountTitle = resolvedAccountTitle.description;
-        } else if (field === 'accountCode' || field === 'accountTitle') {
-          nextLine.accountTitleId = '';
+    setLines((current) => {
+      let shouldAddNextLine = false;
+      const nextLines = current.map((line, index) => {
+        if (line.id !== lineId) {
+          return line;
         }
-      }
 
-      if (field === 'subsidiary' || field === 'costUnitId') {
-        const resolvedCostUnit = findCostUnit(costUnitRows, field === 'costUnitId' ? value : nextLine[field]);
+        const nextLine = { ...line, [field]: value };
 
-        if (resolvedCostUnit) {
-          nextLine.costUnitId = resolvedCostUnit.costUnitId;
-          nextLine.subsidiary = resolvedCostUnit.display;
-        } else if (field === 'subsidiary') {
-          nextLine.costUnitId = '';
+        if (field === 'accountCode' || field === 'accountTitle' || field === 'accountTitleId') {
+          const resolvedAccountTitle = findAccountTitle(accountTitleRows, field === 'accountTitleId' ? value : nextLine[field]);
+
+          if (resolvedAccountTitle) {
+            nextLine.accountTitleId = resolvedAccountTitle.accountTitleId;
+            nextLine.accountCode = resolvedAccountTitle.code;
+            nextLine.accountTitle = resolvedAccountTitle.description;
+          } else if (field === 'accountCode' || field === 'accountTitle') {
+            nextLine.accountTitleId = '';
+          }
         }
-      }
 
-      if (field === 'costCenter') {
-        const resolvedClassification = findClassification(classificationRows, nextLine[field]);
+        if (field === 'subsidiary' || field === 'costUnitId') {
+          const resolvedCostUnit = findCostUnit(costUnitRows, field === 'costUnitId' ? value : nextLine[field]);
 
-        if (resolvedClassification) {
-          nextLine.costCenter = resolvedClassification.display;
+          if (resolvedCostUnit) {
+            nextLine.costUnitId = resolvedCostUnit.costUnitId;
+            nextLine.subsidiary = resolvedCostUnit.display;
+          } else if (field === 'subsidiary') {
+            nextLine.costUnitId = '';
+          }
         }
-      }
 
-      return nextLine;
-    }));
+        if (field === 'costCenter') {
+          const resolvedClassification = findClassification(classificationRows, nextLine[field]);
+
+          if (resolvedClassification) {
+            nextLine.costCenter = resolvedClassification.display;
+          }
+        }
+
+        shouldAddNextLine = (
+          index === current.length - 1
+          && (field === 'debit' || field === 'credit')
+          && parseAmount(value) > 0
+        );
+
+        return nextLine;
+      });
+
+      return shouldAddNextLine
+        ? [...nextLines, createBlankJournalLine(createNextJournalLineId(nextLines))]
+        : nextLines;
+    });
+  };
+
+  const getLineLookupConfig = (lineId, field) => {
+    if (field === 'accountCode' || field === 'accountTitle') {
+      return {
+        lineId,
+        field,
+        title: field === 'accountCode' ? 'Select Account Code' : 'Select Account Title',
+        placeholder: 'Search code or description',
+        rows: accountTitleRows.map((row) => ({
+          id: row.accountTitleId,
+          code: row.code,
+          description: row.description,
+          display: row.display,
+          primary: field === 'accountCode' ? row.code : row.description,
+          secondary: field === 'accountCode' ? row.description : row.code,
+          selectField: 'accountTitleId',
+          selectValue: row.accountTitleId,
+        })),
+      };
+    }
+
+    if (field === 'subsidiary') {
+      return {
+        lineId,
+        field,
+        title: 'Select Subsidiary',
+        placeholder: 'Search code or description',
+        rows: costUnitRows.map((row) => ({
+          id: row.costUnitId,
+          code: row.code,
+          description: row.description,
+          display: row.display,
+          primary: row.code,
+          secondary: row.description,
+          selectField: 'costUnitId',
+          selectValue: row.costUnitId,
+        })),
+      };
+    }
+
+    if (field === 'costCenter') {
+      return {
+        lineId,
+        field,
+        title: 'Select Cost Center',
+        placeholder: 'Search code or description',
+        rows: classificationRows.map((row) => ({
+          id: row.classificationId,
+          code: row.code,
+          description: row.description,
+          display: row.display,
+          hierarchy: row.hierarchy,
+          primary: row.code || row.display,
+          secondary: row.description || row.hierarchy || row.display,
+          selectField: 'costCenter',
+          selectValue: row.display,
+        })),
+      };
+    }
+
+    return null;
+  };
+
+  const openLineLookup = (lineId, field) => {
+    const lookupConfig = getLineLookupConfig(lineId, field);
+
+    if (!lookupConfig) {
+      return;
+    }
+
+    setLineLookup(lookupConfig);
+    setLineLookupSearch('');
+  };
+
+  const closeLineLookup = () => {
+    setLineLookup(null);
+    setLineLookupSearch('');
+  };
+
+  const selectLineLookupRow = (row) => {
+    if (!lineLookup) {
+      return;
+    }
+
+    updateLine(lineLookup.lineId, row.selectField, row.selectValue);
+    closeLineLookup();
   };
 
   const buildJournalPayload = () => {
@@ -1575,13 +1759,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     }
   };
 
-  const addLine = () => {
-    setLines((current) => [
-      ...current,
-      createBlankJournalLine(Date.now()),
-    ]);
-  };
-
   const deleteSelected = () => {
     setLines((current) => {
       const next = current.filter((line) => !line.selected);
@@ -1635,7 +1812,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   <span>Voucher header</span>
                 </div>
 
-                <div className="etr-journal-form-grid two">
+                <div className="etr-journal-form-grid two etr-journal-reference-grid">
                   <label className="etr-journal-field">
                     <span>Transaction No.</span>
                     <input value={header.transactionNo} onChange={(event) => updateHeader('transactionNo', event.target.value)} placeholder="Generated by WebAPI" readOnly />
@@ -1659,7 +1836,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               <section className="etr-journal-card">
                 <div className="etr-journal-card-head">
                   <h2>Reference Info</h2>
-                  <span>Source document and company</span>
                 </div>
 
                 <div className="etr-journal-form-grid two">
@@ -1667,7 +1843,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                     <span>Reference Type</span>
                     <input value={header.referenceType} readOnly />
                   </label>
-                  <label className="etr-journal-field">
+                  <label className="etr-journal-field etr-journal-reference-select-field">
                     <span>Daily Expense Reference</span>
                     <select value={header.referenceId} onChange={(event) => updateHeader('referenceId', event.target.value)} disabled={isLookupsLoading}>
                       <option value="">{isLookupsLoading ? 'Loading references...' : 'Select approved daily expense'}</option>
@@ -1676,7 +1852,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                       ))}
                     </select>
                   </label>
-                  <label className="etr-journal-field is-wide">
+                  <label className="etr-journal-field">
                     <span>Company</span>
                     <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading}>
                       <option value="">{isLookupsLoading ? 'Loading companies...' : 'Select company'}</option>
@@ -1686,6 +1862,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label className="etr-journal-field">
+                    <span>Reference No</span>
+                    <input value={header.referenceNo} readOnly />
                   </label>
                 </div>
               </section>
@@ -1771,7 +1951,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             </div>
             <div className="etr-journal-line-actions">
               <button type="button" onClick={deleteSelected}>Delete Selected</button>
-              <button type="button" onClick={addLine}>Add Line</button>
             </div>
           </div>
 
@@ -1796,54 +1975,52 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                     </td>
                     {lineColumns.map((column) => (
                       <td key={column.key} className={column.numeric ? 'is-number' : ''}>
-                        <input
-                          value={line[column.key]}
-                          onChange={(event) => updateLine(line.id, column.key, event.target.value)}
-                          inputMode={column.numeric ? 'decimal' : undefined}
-                          aria-label={column.label}
-                          placeholder={column.numeric ? '0.0000' : 'Click to select'}
-                          list={
-                            column.key === 'accountCode'
-                              ? 'etr-journal-account-code-options'
-                              : column.key === 'accountTitle'
-                                ? 'etr-journal-account-title-options'
-                                : column.key === 'subsidiary'
-                                  ? 'etr-journal-cost-unit-options'
-                                  : column.key === 'costCenter'
-                                    ? 'etr-journal-classification-options'
-                                    : undefined
-                          }
-                        />
+                        {isLineLookupField(column.key) ? (
+                          <input
+                            className="etr-journal-line-lookup-input"
+                            value={line[column.key]}
+                            onClick={() => openLineLookup(line.id, column.key)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                openLineLookup(line.id, column.key);
+                              }
+                            }}
+                            aria-label={column.label}
+                            placeholder="Click to select"
+                            readOnly
+                          />
+                        ) : (
+                          <input
+                            value={line[column.key]}
+                            onChange={(event) => updateLine(line.id, column.key, event.target.value)}
+                            inputMode={column.numeric ? 'decimal' : undefined}
+                            aria-label={column.label}
+                            placeholder={column.numeric ? '0.0000' : 'Click to select'}
+                          />
+                        )}
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <datalist id="etr-journal-account-code-options">
-              {accountTitleRows.map((row) => (
-                <option key={row.accountTitleId} value={row.code}>{row.description}</option>
-              ))}
-            </datalist>
-            <datalist id="etr-journal-account-title-options">
-              {accountTitleRows.map((row) => (
-                <option key={row.accountTitleId} value={row.description}>{row.code}</option>
-              ))}
-            </datalist>
-            <datalist id="etr-journal-cost-unit-options">
-              {costUnitRows.map((row) => (
-                <option key={row.costUnitId} value={row.display}>{row.code}</option>
-              ))}
-            </datalist>
-            <datalist id="etr-journal-classification-options">
-              {classificationRows.map((row) => (
-                <option key={row.classificationId} value={row.display}>{row.code}</option>
-              ))}
-            </datalist>
           </div>
 
+          <label className="etr-journal-field etr-journal-details-remarks">
+            <span>Remarks</span>
+            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} />
+          </label>
         </section>
       </div>
+
+      <JournalLineLookupModal
+        lookup={lineLookup}
+        searchTerm={lineLookupSearch}
+        onSearchChange={setLineLookupSearch}
+        onSelect={selectLineLookupRow}
+        onClose={closeLineLookup}
+      />
     </div>
   );
 }

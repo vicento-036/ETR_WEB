@@ -395,6 +395,122 @@
   transform: rotate(180deg);
 }
 
+.etr-expense-lookup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px 14px;
+  background: rgba(9, 25, 39, 0.34);
+}
+
+.etr-expense-lookup-dialog {
+  width: min(620px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid rgba(27, 90, 150, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgba(12, 32, 51, 0.22);
+  padding: 18px;
+}
+
+.etr-expense-lookup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.etr-expense-lookup-head h2 {
+  margin: 0;
+  color: #173652;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.etr-expense-lookup-head button {
+  min-height: 36px;
+  border: 1px solid rgba(27, 90, 150, 0.16);
+  border-radius: 8px;
+  padding: 0 15px;
+  background: #f8fbff;
+  color: #123e6d;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.etr-expense-lookup-search {
+  width: 100%;
+  height: 37px;
+  border: 1px solid rgba(27, 90, 150, 0.2);
+  border-radius: 7px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #173652;
+  font: inherit;
+  outline: none;
+}
+
+.etr-expense-lookup-search:focus {
+  border-color: rgba(27, 90, 150, 0.45);
+  box-shadow: 0 0 0 3px rgba(113, 181, 255, 0.16);
+}
+
+.etr-expense-lookup-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(430px, calc(100vh - 196px));
+  overflow: auto;
+  margin-top: 14px;
+}
+
+.etr-expense-lookup-option {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  border: 1px solid rgba(27, 90, 150, 0.16);
+  border-radius: 7px;
+  padding: 12px;
+  background: #f5f9fd;
+  color: #173652;
+  text-align: left;
+  cursor: pointer;
+}
+
+.etr-expense-lookup-option:hover,
+.etr-expense-lookup-option:focus {
+  border-color: rgba(27, 90, 150, 0.34);
+  background: #eef6fd;
+  outline: none;
+}
+
+.etr-expense-lookup-option strong {
+  color: #123e6d;
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.etr-expense-lookup-option span {
+  color: #58708c;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.etr-expense-lookup-status {
+  border: 1px dashed rgba(27, 90, 150, 0.2);
+  border-radius: 7px;
+  padding: 16px;
+  color: #58708c;
+  text-align: center;
+}
+
+.etr-expense-lookup-status.is-error {
+  color: #8d2c2c;
+}
+
 .etr-expense-combo-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -536,6 +652,29 @@
   padding: 9px;
   text-align: center;
   cursor: pointer;
+}
+
+.etr-expense-upload-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.etr-expense-upload-card.is-compact-preview .etr-expense-upload {
+  min-height: 60px;
+}
+
+.etr-expense-upload-card.is-compact-preview .etr-expense-preview-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  max-height: 56px;
+  overflow: hidden;
+}
+
+.etr-expense-upload-card.is-compact-preview .etr-expense-preview-summary {
+  min-width: 0;
+}
+
+.etr-expense-upload-card.is-compact-preview .etr-expense-preview-summary strong {
+  min-width: 0;
 }
 
 .etr-expense-upload.has-error {

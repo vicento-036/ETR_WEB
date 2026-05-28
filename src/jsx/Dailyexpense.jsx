@@ -819,6 +819,66 @@ function FormField({
   );
 }
 
+function ExpenseLookupModal({
+  isOpen,
+  title,
+  searchValue,
+  onSearchChange,
+  isLoading,
+  error,
+  emptyMessage,
+  rows,
+  onSelect,
+  onClose,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="etr-expense-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-expense-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-expense-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-expense-lookup-head">
+          <h2 id="etr-expense-lookup-title">{title}</h2>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <input
+          className="etr-expense-lookup-search"
+          value={searchValue}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search code or description"
+          autoFocus
+        />
+
+        <div className="etr-expense-lookup-list">
+          {isLoading ? (
+            <div className="etr-expense-lookup-status">Loading records...</div>
+          ) : null}
+          {!isLoading && error ? (
+            <div className="etr-expense-lookup-status is-error">{error}</div>
+          ) : null}
+          {!isLoading && !error && rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">{emptyMessage}</div>
+          ) : null}
+          {!isLoading && !error ? rows.map((row, index) => (
+            <button type="button" key={`${row.id || row.code}:${index}`} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
+              <strong>{row.code}</strong>
+              <span>{row.description}</span>
+            </button>
+          )) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function ExpenseEntryView({
   user,
   selectedExpense = null,
@@ -2030,7 +2090,7 @@ export default function ExpenseEntryView({
   };
 
   return (
-    <div className="etr-expense-entry">
+    <div className={`etr-expense-entry ${isDetailMode ? 'is-detail-mode' : ''}`}>
       <div className="etr-expense-toolbar">
         <div>
           <p className="etr-expense-kicker">Finance</p>
@@ -2142,7 +2202,8 @@ export default function ExpenseEntryView({
                       className={`etr-expense-lookup-button ${formData.expenseType ? 'has-value' : ''}`}
                       onClick={() => {
                         if (!isReadOnlyDetail) {
-                          setIsExpenseTypeLookupOpen((current) => !current);
+                          setIsCostUnitLookupOpen(false);
+                          setIsExpenseTypeLookupOpen(true);
                         }
                       }}
                       aria-expanded={isExpenseTypeLookupOpen}
@@ -2152,34 +2213,6 @@ export default function ExpenseEntryView({
                       <span>{formData.expenseType || 'Select type'}</span>
                       <ExpenseChevronIcon isOpen={isExpenseTypeLookupOpen} />
                     </button>
-
-                    {isExpenseTypeLookupOpen ? (
-                      <div className="etr-expense-combo-panel">
-                        <input
-                          value={expenseTypeQuery}
-                          onChange={(event) => setExpenseTypeQuery(event.target.value)}
-                          placeholder="Search code or description"
-                          autoFocus
-                        />
-                        <div className="etr-expense-combo-list">
-                          {isAccountTitlesLoading ? (
-                            <div className="etr-expense-combo-status">Loading account titles...</div>
-                          ) : null}
-                          {!isAccountTitlesLoading && accountTitlesError ? (
-                            <div className="etr-expense-combo-status is-error">{accountTitlesError}</div>
-                          ) : null}
-                          {!isAccountTitlesLoading && !accountTitlesError && filteredExpenseTypeRows.length === 0 ? (
-                            <div className="etr-expense-combo-status">No account titles found.</div>
-                          ) : null}
-                          {!isAccountTitlesLoading && !accountTitlesError ? filteredExpenseTypeRows.map((row) => (
-                            <button type="button" key={row.accountTitleId} onClick={() => handleSelectExpenseType(row)}>
-                              <span>{row.code}</span>
-                              <strong>{row.description}</strong>
-                            </button>
-                          )) : null}
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                 </FormField>
 
@@ -2190,7 +2223,8 @@ export default function ExpenseEntryView({
                       className={`etr-expense-lookup-button ${formData.costUnit ? 'has-value' : ''}`}
                       onClick={() => {
                         if (!isReadOnlyDetail) {
-                          setIsCostUnitLookupOpen((current) => !current);
+                          setIsExpenseTypeLookupOpen(false);
+                          setIsCostUnitLookupOpen(true);
                         }
                       }}
                       aria-expanded={isCostUnitLookupOpen}
@@ -2200,34 +2234,6 @@ export default function ExpenseEntryView({
                       <span>{formData.costUnit || 'Select cost unit'}</span>
                       <ExpenseChevronIcon isOpen={isCostUnitLookupOpen} />
                     </button>
-
-                    {isCostUnitLookupOpen ? (
-                      <div className="etr-expense-combo-panel">
-                        <input
-                          value={costUnitQuery}
-                          onChange={(event) => setCostUnitQuery(event.target.value)}
-                          placeholder="Search code or description"
-                          autoFocus
-                        />
-                        <div className="etr-expense-combo-list">
-                          {isCostUnitsLoading ? (
-                            <div className="etr-expense-combo-status">Loading cost units...</div>
-                          ) : null}
-                          {!isCostUnitsLoading && costUnitsError ? (
-                            <div className="etr-expense-combo-status is-error">{costUnitsError}</div>
-                          ) : null}
-                          {!isCostUnitsLoading && !costUnitsError && filteredCostUnitRows.length === 0 ? (
-                            <div className="etr-expense-combo-status">No cost units found.</div>
-                          ) : null}
-                          {!isCostUnitsLoading && !costUnitsError ? filteredCostUnitRows.map((row, index) => (
-                            <button type="button" key={`${row.costUnitId}:${index}`} onClick={() => handleSelectCostUnit(row)}>
-                              <span>{row.code}</span>
-                              <strong>{row.description}</strong>
-                            </button>
-                          )) : null}
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
                 </FormField>
               </div>
@@ -2274,7 +2280,7 @@ export default function ExpenseEntryView({
             </div>
           </section>
 
-          <section className="etr-expense-card etr-expense-upload-card">
+          <section className={`etr-expense-card etr-expense-upload-card ${isReadOnlyDetail ? 'is-compact-preview' : ''}`}>
             <div className="etr-expense-card-head">
               <h2>Attachment</h2>
               <span>Receipt preview</span>
@@ -2384,6 +2390,44 @@ export default function ExpenseEntryView({
           </div>
         </aside>
       </div>
+
+      <ExpenseLookupModal
+        isOpen={isExpenseTypeLookupOpen}
+        title="Select Expense Type"
+        searchValue={expenseTypeQuery}
+        onSearchChange={setExpenseTypeQuery}
+        isLoading={isAccountTitlesLoading}
+        error={accountTitlesError}
+        emptyMessage="No account titles found."
+        rows={filteredExpenseTypeRows.map((row) => ({
+          ...row,
+          id: row.accountTitleId,
+        }))}
+        onSelect={handleSelectExpenseType}
+        onClose={() => {
+          setIsExpenseTypeLookupOpen(false);
+          setExpenseTypeQuery('');
+        }}
+      />
+
+      <ExpenseLookupModal
+        isOpen={isCostUnitLookupOpen}
+        title="Select Cost Unit"
+        searchValue={costUnitQuery}
+        onSearchChange={setCostUnitQuery}
+        isLoading={isCostUnitsLoading}
+        error={costUnitsError}
+        emptyMessage="No cost units found."
+        rows={filteredCostUnitRows.map((row) => ({
+          ...row,
+          id: row.costUnitId,
+        }))}
+        onSelect={handleSelectCostUnit}
+        onClose={() => {
+          setIsCostUnitLookupOpen(false);
+          setCostUnitQuery('');
+        }}
+      />
 
       {isAttachmentViewerOpen ? (
         <div className="etr-expense-viewer-backdrop" role="presentation" onClick={() => setIsAttachmentViewerOpen(false)}>
