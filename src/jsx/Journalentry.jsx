@@ -1135,7 +1135,10 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         return sortConfig.direction === 'asc' ? 1 : -1;
       }
 
-      return 0;
+      // Tie-breaker: sort by journalEntryId descending (newest first)
+      const firstId = Number(first.journalEntryId || 0);
+      const secondId = Number(second.journalEntryId || 0);
+      return secondId - firstId;
     });
   }, [filteredRows, sortConfig]);
 
@@ -2061,11 +2064,21 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                 <div className="etr-journal-form-grid two">
                   <label className="etr-journal-field">
                     <span>Reference Type</span>
-                    <input value={header.referenceType} readOnly />
+                    <input
+                      value={header.referenceType}
+                      onChange={(event) => updateHeader('referenceType', event.target.value)}
+                      placeholder={header.referenceId ? "Generated from reference" : "Enter reference type"}
+                      readOnly={!!header.referenceId || isLocked}
+                    />
                   </label>
                   <label className="etr-journal-field">
                     <span>Reference No</span>
-                    <input value={header.referenceNo} readOnly />
+                    <input
+                      value={header.referenceNo}
+                      onChange={(event) => updateHeader('referenceNo', event.target.value)}
+                      placeholder={header.referenceId ? "Generated from reference" : "Enter reference number"}
+                      readOnly={!!header.referenceId || isLocked}
+                    />
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
