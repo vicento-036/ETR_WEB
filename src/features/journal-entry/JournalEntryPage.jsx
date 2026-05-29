@@ -1468,62 +1468,52 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           </div>
         ) : null}
 
-        {selectedDetailEntry ? (
-          <div className="etr-journal-manager-detail-overlay" role="presentation" onMouseDown={() => setSelectedDetailEntry(null)}>
-            <div
-              className="etr-journal-manager-detail-popover"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="etr-journal-manager-detail-title"
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <div className="etr-journal-manager-detail-head">
-                <div>
-                  <span>Journal Entry Details</span>
-                  <h3 id="etr-journal-manager-detail-title">{selectedDetailEntry.entryNumber || `Entry #${selectedDetailEntry.journalEntryId}`}</h3>
-                </div>
-                <button type="button" onClick={() => setSelectedDetailEntry(null)}>Close</button>
-              </div>
-
-              {detailError ? <div className="etr-journal-action-message is-error">{detailError}</div> : null}
-
-              <div className="etr-journal-lines-wrap">
-                <table className="etr-journal-lines etr-journal-manager-detail-table">
-                  <thead>
-                    <tr>
-                      {managerDetailColumns.map((column) => (
-                        <th key={column.key}>{column.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isDetailLoading ? (
-                      <tr>
-                        <td colSpan={managerDetailColumns.length}>Loading details...</td>
-                      </tr>
-                    ) : null}
-
-                    {!isDetailLoading && detailRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={managerDetailColumns.length}>No details found for this journal entry.</td>
-                      </tr>
-                    ) : null}
-
-                    {!isDetailLoading ? detailRows.map((detail, detailIndex) => (
-                      <tr key={`${detail.id}-${detailIndex}`}>
-                        {managerDetailColumns.map((column) => (
-                          <td key={column.key} className={column.numeric ? 'is-number' : ''}>
-                            {column.numeric ? formatMoney(detail[column.key]) : detail[column.key]}
-                          </td>
-                        ))}
-                      </tr>
-                    )) : null}
-                  </tbody>
-                </table>
+        <div className="etr-journal-manager-detail-overlay">
+          <div className="etr-journal-manager-detail-popover">
+            <div className="etr-journal-manager-detail-head">
+              <div>
+                <span>Journal Entry Details</span>
               </div>
             </div>
+
+            {selectedDetailEntry && detailError ? <div className="etr-journal-action-message is-error">{detailError}</div> : null}
+
+            <div className="etr-journal-lines-wrap">
+              <table className="etr-journal-lines etr-journal-manager-detail-table">
+                <thead>
+                  <tr>
+                    {managerDetailColumns.map((column) => (
+                      <th key={column.key}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedDetailEntry && isDetailLoading ? (
+                    <tr>
+                      <td colSpan={managerDetailColumns.length}>Loading details...</td>
+                    </tr>
+                  ) : null}
+
+                  {selectedDetailEntry && !isDetailLoading && detailRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={managerDetailColumns.length}>No details found for this journal entry.</td>
+                    </tr>
+                  ) : null}
+
+                  {selectedDetailEntry && !isDetailLoading ? detailRows.map((detail, detailIndex) => (
+                    <tr key={`${detail.id}-${detailIndex}`}>
+                      {managerDetailColumns.map((column) => (
+                        <td key={column.key} className={column.numeric ? 'is-number' : ''}>
+                          {column.numeric ? formatMoney(detail[column.key]) : detail[column.key]}
+                        </td>
+                      ))}
+                    </tr>
+                  )) : null}
+                </tbody>
+              </table>
+            </div>
           </div>
-        ) : null}
+        </div>
       </section>
     </div>
   );
