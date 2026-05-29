@@ -630,6 +630,7 @@ function DashboardContent({
         user={user}
         selectedExpense={selectedExpense}
         selectedJournalEntry={selectedJournalEntry}
+        onBack={() => onNavigate('journal-manager')}
       />
     );
   }

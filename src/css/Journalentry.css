@@ -514,10 +514,15 @@
   text-align: center;
 }
 
-.etr-journal-lines input {
+.etr-journal-lines input,
+.etr-journal-details-remarks textarea {
   height: 34px;
   border-radius: 7px;
   padding: 0 9px;
+  line-height: 32px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 400;
 }
 
 .etr-journal-lines input[type="checkbox"] {
@@ -1297,8 +1302,26 @@
   margin-top: 10px;
 }
 
+.etr-journal-details-remarks > span {
+  color: #143452;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .etr-journal-details-remarks textarea {
-  min-height: 76px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  resize: none;
+  border-radius: 7px;
+  padding: 0 9px;
+  line-height: 32px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 400;
+  overflow: hidden;
 }
 
 .etr-journal-audit-grid {

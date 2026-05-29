@@ -540,6 +540,10 @@ function normalizeJournalStatus(status) {
 }
 
 function getStatusClass(status) {
+  if (!String(status || '').trim()) {
+    return '';
+  }
+
   if (status === 'Unsaved') {
     return 'is-unsaved';
   }
@@ -740,22 +744,18 @@ function formatAuditStamp(name, value) {
 
 function formatAuditStampFromRecord(record) {
   if (!record?.name || !record?.at) {
-    return '-';
+    return '';
   }
 
   return formatAuditStamp(record.name, record.at);
 }
 
-function resolveAuditStamp(record, fallbackName, fallbackDate) {
+function resolveAuditStamp(record) {
   if (record?.name && record?.at) {
     return formatAuditStamp(record.name, record.at);
   }
 
-  if (fallbackName) {
-    return formatAuditStamp(fallbackName, fallbackDate);
-  }
-
-  return '-';
+  return '';
 }
 
 function getNextJournalSequence() {
@@ -832,10 +832,14 @@ function normalizeDateTextToIso(value) {
   return `${year}-${month}-${day}`;
 }
 
-function DateTextInput({ value, onChange }) {
+function DateTextInput({ value, onChange, readOnly = false }) {
   const pickerRef = useRef(null);
 
   const openPicker = () => {
+    if (readOnly) {
+      return;
+    }
+
     const picker = pickerRef.current;
 
     if (!picker) {
@@ -867,6 +871,7 @@ function DateTextInput({ value, onChange }) {
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={readOnly}
         tabIndex={-1}
         aria-hidden="true"
         style={{
@@ -1274,7 +1279,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   );
 }
 
-function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry = null, onSaved }) {
+function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry = null, onSaved, onBack }) {
   const [employeeInfo, setEmployeeInfo] = useState(null);
   const [referenceRows, setReferenceRows] = useState([]);
   const [bookRows, setBookRows] = useState([]);
@@ -1283,12 +1288,12 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [costUnitRows, setCostUnitRows] = useState([]);
   const [classificationRows, setClassificationRows] = useState([]);
   const [auditTrail, setAuditTrail] = useState(createDefaultAuditTrail);
-  const [previewAuditAt] = useState(() => new Date());
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
   const [lookupError, setLookupError] = useState('');
   const [isLookupsLoading, setIsLookupsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditingDetail, setIsEditingDetail] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
   const [lineLookup, setLineLookup] = useState(null);
@@ -1335,22 +1340,26 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         const rawRemarks = String(detail?.remarks || '');
         const parts = rawRemarks.split(' | ');
         let costCenter = '';
+        let detailRemarks = rawRemarks;
 
         if (parts.length > 1) {
           const firstPart = parts[0];
           const matchedClassification = findClassification(nextClassificationRows, firstPart);
           if (matchedClassification) {
             costCenter = matchedClassification.display;
+            detailRemarks = parts.slice(1).join(' | ');
           }
         } else if (parts.length === 1 && parts[0]) {
           const matchedClassification = findClassification(nextClassificationRows, parts[0]);
           if (matchedClassification) {
             costCenter = matchedClassification.display;
+            detailRemarks = '';
           }
         }
 
         return {
           id: Date.now() + index,
+          journalDetailId: String(detail?.journalEntryDetailID ?? detail?.journalEntryDetailId ?? detail?.detailID ?? detail?.detailId ?? ''),
           selected: false,
           accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
           costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
@@ -1360,7 +1369,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           costCenter: costCenter,
           debit: Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '',
           credit: Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '',
-          remarks: '',
+          remarks: detailRemarks,
         };
       })
       : createDefaultJournalLines();
@@ -1592,9 +1601,15 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     return () => controller.abort();
   }, [selectedJournalEntry, accountTitleRows, costUnitRows, classificationRows, bookRows]);
 
+  useEffect(() => {
+    setIsEditingDetail(false);
+    setActionMessage('');
+    setActionError('');
+  }, [selectedJournalEntry]);
+
   const auditUserName = getAuditEmployeeName(employeeInfo);
-  const createdAuditStamp = resolveAuditStamp(auditTrail.created, auditUserName, previewAuditAt);
-  const modifiedAuditStamp = resolveAuditStamp(auditTrail.modified, auditUserName, previewAuditAt);
+  const createdAuditStamp = resolveAuditStamp(auditTrail.created);
+  const modifiedAuditStamp = resolveAuditStamp(auditTrail.modified);
   const postedCancelledAuditStamp = formatAuditStampFromRecord(auditTrail.postedCancelled);
 
   const totals = useMemo(() => {
@@ -1610,12 +1625,15 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
   const isBalanced = Math.abs(totals.variance) < 0.01;
   const varianceLabel = formatMoney(Math.abs(totals.variance));
-  const signedVarianceLabel = totals.variance < 0 ? `-${varianceLabel}` : varianceLabel;
+  const signedVarianceLabel = varianceLabel;
+  const selectedJournalEntryId = Number(selectedJournalEntry?.journalEntryId ?? selectedJournalEntry?.journalEntryID ?? 0);
+  const isExistingJournalEntry = selectedJournalEntryId > 0;
   const normalizedStatus = normalizeJournalStatus(header.status);
-  const displayStatus = header.transactionNo ? (normalizedStatus || 'Pending') : 'Unsaved';
+  const displayStatus = header.transactionNo ? (normalizedStatus || 'Pending') : '';
   const isPosted = normalizedStatus === 'Posted';
   const isCancelled = normalizedStatus === 'Cancelled';
   const isLocked = isPosted || isCancelled;
+  const isReadOnlyDetail = isExistingJournalEntry && (!isEditingDetail || isLocked);
   const selectedLineCount = lines.filter((line) => line.selected).length;
 
   const clearActionFeedback = () => {
@@ -1778,6 +1796,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   };
 
   const openLineLookup = (lineId, field) => {
+    if (isReadOnlyDetail) {
+      return;
+    }
+
     const lookupConfig = getLineLookupConfig(lineId, field);
 
     if (!lookupConfig) {
@@ -1802,7 +1824,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     closeLineLookup();
   };
 
-  const buildJournalPayload = () => {
+  const buildJournalPayload = (journalEntryId = 0) => {
     const activeLines = lines.filter((line) => (
       String(line.accountCode || '').trim()
       || String(line.accountTitle || '').trim()
@@ -1836,12 +1858,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       endpoint: isDailyExpenseEntry ? JOURNAL_ENTRY_DAILY_EXPENSE_ENDPOINT : JOURNAL_ENTRY_ENDPOINT,
       isDailyExpenseEntry,
       payload: {
+        ...(journalEntryId ? { JournalEntryID: Number(journalEntryId) } : {}),
         ...(isDailyExpenseEntry ? { ReferenceID: Number(header.referenceId) } : {}),
         ReferenceNo: header.referenceNo.trim(),
         EntryDate: header.transactionDate,
         BookID: Number(header.bookId),
         Remarks: header.remarks.trim(),
         Details: activeLines.map((line) => ({
+          ...(line.journalDetailId ? { JournalEntryDetailID: Number(line.journalDetailId) } : {}),
           AccountTitleID: Number(line.accountTitleId),
           Debit: parseAmount(line.debit),
           Credit: parseAmount(line.credit),
@@ -1924,6 +1948,60 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     await submitJournalEntry('save');
   };
 
+  const handleUpdateDetail = async () => {
+    clearActionFeedback();
+
+    if (!selectedJournalEntryId) {
+      setActionError('Select a journal entry first.');
+      return;
+    }
+
+    if (isLocked || isReadOnlyDetail) {
+      setActionError('Posted or cancelled journal entries cannot be modified.');
+      return;
+    }
+
+    const validationErrors = validateJournalEntry(header, lines);
+
+    if (validationErrors.length > 0) {
+      setActionError(validationErrors.join(' '));
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { payload } = buildJournalPayload(selectedJournalEntryId);
+      const token = getToken();
+      const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${selectedJournalEntryId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to update journal entry.');
+      }
+
+      const now = new Date();
+      setAuditTrail((current) => ({
+        ...current,
+        modified: { name: auditUserName || getUserDisplayName(user), at: now },
+      }));
+      setIsEditingDetail(false);
+      setActionMessage(data?.message || 'Journal entry updated successfully.');
+      onSaved?.();
+    } catch (error) {
+      setActionError(error.message || 'Unable to update journal entry.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handlePostToLedger = async () => {
     clearActionFeedback();
 
@@ -1970,7 +2048,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       return;
     }
 
-    if (isLocked) {
+    if (isLocked || isReadOnlyDetail) {
       setActionError('Posted or cancelled journal entries cannot be modified.');
       return;
     }
@@ -1992,29 +2070,57 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         <div>
           <p className="etr-journal-kicker">Finance</p>
           <h1>Journal Entry</h1>
-          <span>Prepare balanced debit and credit lines for ledger posting.</span>
         </div>
 
       <div className="etr-journal-actions">
-        <button
-          type="button"
-          className="is-primary"
-          onClick={handleSaveDraft}
-          disabled={isSubmitting || isLocked || !permissions.canCreate}
-        >
-          {isSubmitting ? 'Saving...' : 'Save Draft'}
-        </button>
-        <button
-          type="button"
-          onClick={handlePostToLedger}
-          disabled={isSubmitting || isLocked || !permissions.canApprove}
-          title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
-        >
-          {isSubmitting ? 'Posting...' : 'Post to Ledger'}
-        </button>
-        <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
-          Print Voucher
-        </button>
+        {isExistingJournalEntry ? (
+          <>
+            {onBack ? <button type="button" onClick={onBack} disabled={isSubmitting}>Back</button> : null}
+            {!isLocked && permissions.canEdit ? (
+              <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSubmitting}>
+                {isEditingDetail ? 'Cancel Edit' : 'Edit'}
+              </button>
+            ) : null}
+            {isEditingDetail && !isLocked && permissions.canEdit ? (
+              <button type="button" className="is-primary" onClick={handleUpdateDetail} disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : 'Save'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handlePostToLedger}
+              disabled={isSubmitting || isLocked || !permissions.canApprove}
+              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+            >
+              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+            </button>
+            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+              Print Voucher
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={handleSaveDraft}
+              disabled={isSubmitting || isLocked || !permissions.canCreate}
+            >
+              {isSubmitting ? 'Saving...' : 'Save Draft'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePostToLedger}
+              disabled={isSubmitting || isLocked || !permissions.canApprove}
+              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+            >
+              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+            </button>
+            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+              Print Voucher
+            </button>
+          </>
+        )}
       </div>
       </div>
 
@@ -2029,7 +2135,6 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               <section className="etr-journal-card">
                 <div className="etr-journal-card-head">
                   <h2>General Info</h2>
-                  <span>Voucher header</span>
                 </div>
 
                 <div className="etr-journal-form-grid two">
@@ -2039,11 +2144,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field">
                     <span>Transaction Date</span>
-                    <DateTextInput value={header.transactionDate} onChange={(value) => updateHeader('transactionDate', value)} />
+                    <DateTextInput value={header.transactionDate} onChange={(value) => updateHeader('transactionDate', value)} readOnly={isReadOnlyDetail} />
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Ledger Book</span>
-                    <select value={header.bookId} onChange={(event) => updateHeader('bookId', event.target.value)} disabled={isLookupsLoading}>
+                    <select value={header.bookId} onChange={(event) => updateHeader('bookId', event.target.value)} disabled={isLookupsLoading || isReadOnlyDetail}>
                       <option value="">{isLookupsLoading ? 'Loading books...' : 'Select ledger book'}</option>
                       {bookRows.map((book) => (
                         <option key={book.bookId} value={book.bookId}>{book.display}</option>
@@ -2069,7 +2174,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
-                    <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading}>
+                    <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading || isReadOnlyDetail}>
                       <option value="">{isLookupsLoading ? 'Loading companies...' : 'Select company'}</option>
                       {companyRows.map((company) => (
                         <option key={company.companyId} value={company.description}>
@@ -2085,8 +2190,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             <div className="etr-journal-column etr-journal-column-narrow">
               <section className="etr-journal-card">
                 <div className="etr-journal-card-head">
-                  <h2>Audit</h2>
-                  <span>User trail and cancellation</span>
+                  <h2>System Logs</h2>
                 </div>
                 <div className="etr-journal-audit-grid">
                   <label className="etr-journal-field">
@@ -2103,7 +2207,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field">
                     <span>Cancellation Remarks</span>
-                    <textarea rows={3} placeholder="No cancellation remarks" />
+                    <textarea rows={3} placeholder="No cancellation remarks" readOnly={isReadOnlyDetail} />
                   </label>
                 </div>
               </section>
@@ -2143,11 +2247,11 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               </div>
             </dl>
             <div className={`etr-journal-balance-note ${isBalanced ? 'is-balanced' : 'is-warning'}`}>
-              <strong>{isBalanced ? 'Balanced entry' : 'Out of balance'}</strong>
+              <strong>{isBalanced ? 'Balanced entry' : ''}</strong>
               <span>
                 {isBalanced
-                  ? 'Debit and credit totals match. Ready for posting review.'
-                  : 'Adjust journal lines until variance returns to zero.'}
+                  ? ''
+                  : ''}
               </span>
             </div>
           </section>
@@ -2164,7 +2268,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
               <button
                 type="button"
                 onClick={deleteSelected}
-                disabled={isSubmitting || isLocked || !permissions.canDelete || selectedLineCount === 0}
+                disabled={isSubmitting || isLocked || isReadOnlyDetail || !permissions.canDelete || selectedLineCount === 0}
                 title={selectedLineCount === 0 ? 'Select at least one row to delete' : undefined}
               >
                 Delete Selected
@@ -2188,6 +2292,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                         type="checkbox"
                         checked={line.selected}
                         onChange={(event) => updateLine(line.id, 'selected', event.target.checked)}
+                        disabled={isReadOnlyDetail}
                         aria-label="Select journal line"
                       />
                     </td>
@@ -2206,6 +2311,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                             }}
                             aria-label={column.label}
                             placeholder="Click to select"
+                            disabled={isReadOnlyDetail}
                             readOnly
                           />
                         ) : (
@@ -2215,6 +2321,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                             inputMode={column.numeric ? 'decimal' : undefined}
                             aria-label={column.label}
                             placeholder={column.numeric ? '0.0000' : 'Click to select'}
+                            readOnly={isReadOnlyDetail}
                           />
                         )}
                       </td>
@@ -2227,7 +2334,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
           <label className="etr-journal-field etr-journal-details-remarks">
             <span>Remarks</span>
-            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} />
+            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} readOnly={isReadOnlyDetail} />
           </label>
         </section>
       </div>
