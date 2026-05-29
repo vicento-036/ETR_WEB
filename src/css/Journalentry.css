@@ -181,6 +181,7 @@
   flex-direction: column;
   min-height: min(650px, calc(100vh - 220px));
   padding: 12px 14px;
+  position: relative;
 }
 
 .etr-journal-panel {
@@ -372,6 +373,15 @@
 
 .etr-journal-table tbody tr:hover {
   background: #f4faff;
+}
+
+.etr-journal-manager .etr-journal-table tbody tr {
+  cursor: pointer;
+}
+
+.etr-journal-manager .etr-journal-table tbody tr.is-selected {
+  background: #edf7ff;
+  box-shadow: inset 4px 0 0 #1b5a96;
 }
 
 .etr-journal-sort-button {
@@ -738,6 +748,78 @@
 .etr-journal-pagination button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.etr-journal-manager-detail-overlay {
+  position: static;
+  display: block;
+  background: transparent;
+  padding: 14px 0 0;
+}
+
+.etr-journal-manager-detail-popover {
+  width: 100%;
+  max-height: none;
+  overflow: hidden;
+  border: 1px solid rgba(27, 90, 150, 0.18);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(6, 31, 57, 0.1);
+  padding: 14px;
+  animation: etr-journal-detail-slide-up 180ms ease-out;
+}
+
+.etr-journal-manager-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.etr-journal-manager-detail-head span {
+  color: #496c8f;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.etr-journal-manager-detail-head h3 {
+  margin: 4px 0 0;
+  color: #062f5f;
+  font-size: 1rem;
+}
+
+.etr-journal-manager-detail-head button {
+  min-height: 32px;
+  border: 1px solid rgba(27, 90, 150, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #174b7f;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.etr-journal-manager-detail-table {
+  min-width: 980px;
+}
+
+.etr-journal-manager-detail-popover .etr-journal-lines-wrap {
+  max-height: 300px;
+}
+
+@keyframes etr-journal-detail-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(34px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .etr-journal-form-shell {
