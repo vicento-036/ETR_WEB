@@ -592,11 +592,6 @@ function DashboardContent({
           onOpenExpense(expense);
           onNavigate('expense-entry');
         }}
-        onJournalEntryCreated={(journalEntry) => {
-          onOpenJournalEntry(journalEntry);
-          onJournalEntryKeyBump();
-          onNavigate('journal-entry');
-        }}
       />
     );
   }
