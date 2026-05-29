@@ -1377,6 +1377,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [isLookupsLoading, setIsLookupsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingDetail, setIsEditingDetail] = useState(false);
+  const [isReferenceTypeMenuOpen, setIsReferenceTypeMenuOpen] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
   const [lineLookup, setLineLookup] = useState(null);
@@ -2165,25 +2166,57 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         </div>
 
       <div className="etr-journal-actions">
-        <button
-          type="button"
-          className="is-primary"
-          onClick={handleSaveDraft}
-          disabled={isSubmitting || isLocked || !permissions.canCreate || !!header.transactionNo}
-        >
-          {isSubmitting ? 'Saving...' : 'Save Draft'}
-        </button>
-        <button
-          type="button"
-          onClick={handlePostToLedger}
-          disabled={isSubmitting || isLocked || !permissions.canApprove}
-          title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
-        >
-          {isSubmitting ? 'Posting...' : 'Post to Ledger'}
-        </button>
-        <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
-          Print Voucher
-        </button>
+        {isExistingJournalEntry ? (
+          <>
+            {onBack ? <button type="button" onClick={onBack} disabled={isSubmitting}>Back</button> : null}
+            <button
+              type="button"
+              onClick={() => setIsEditingDetail((current) => !current)}
+              disabled={isSubmitting || isLocked || !permissions.canEdit}
+              title={!permissions.canEdit ? 'Edit permission is required' : undefined}
+            >
+              {isEditingDetail ? 'Cancel Edit' : 'Edit'}
+            </button>
+            {isEditingDetail && !isLocked && permissions.canEdit ? (
+              <button type="button" className="is-primary" onClick={handleUpdateDetail} disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : 'Save'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handlePostToLedger}
+              disabled={isSubmitting || isLocked || !permissions.canApprove}
+              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+            >
+              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+            </button>
+            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+              Print Voucher
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={handleSaveDraft}
+              disabled={isSubmitting || isLocked || !permissions.canCreate || !!header.transactionNo}
+            >
+              {isSubmitting ? 'Saving...' : 'Save Draft'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePostToLedger}
+              disabled={isSubmitting || isLocked || !permissions.canApprove}
+              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+            >
+              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+            </button>
+            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+              Print Voucher
+            </button>
+          </>
+        )}
       </div>
       </div>
 
@@ -2229,12 +2262,33 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                 <div className="etr-journal-form-grid two">
                   <label className="etr-journal-field">
                     <span>Reference Type</span>
-                    <input
-                      value={header.referenceType}
-                      onChange={(event) => updateHeader('referenceType', event.target.value)}
-                      placeholder={header.referenceId ? "Generated from reference" : "Enter reference type"}
-                      readOnly={!!header.referenceId || isLocked}
-                    />
+                    <div
+                      className="etr-journal-empty-dropdown"
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setIsReferenceTypeMenuOpen(false);
+                        }
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="etr-journal-empty-dropdown-button"
+                        onClick={() => setIsReferenceTypeMenuOpen((current) => !current)}
+                        aria-haspopup="listbox"
+                        aria-expanded={isReferenceTypeMenuOpen}
+                        aria-label="Reference Type"
+                      >
+                        <span aria-hidden="true">&nbsp;</span>
+                      </button>
+                      {isReferenceTypeMenuOpen ? (
+                        <div
+                          className="etr-journal-empty-dropdown-menu"
+                          role="listbox"
+                          tabIndex={-1}
+                          aria-label="No reference types available"
+                        />
+                      ) : null}
+                    </div>
                   </label>
                   <label className="etr-journal-field">
                     <span>Reference No</span>
