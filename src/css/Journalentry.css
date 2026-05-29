@@ -273,7 +273,7 @@
   border: 1px solid rgba(20, 62, 109, 0.14);
   border-radius: 8px;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
 }
 
 .etr-journal-table,
@@ -290,8 +290,8 @@
 }
 
 .etr-journal-manager .etr-journal-table {
-  min-width: 0;
-  table-layout: fixed;
+  min-width: 1720px;
+  table-layout: auto;
 }
 
 .etr-journal-lines {
@@ -324,11 +324,10 @@
 
 .etr-journal-manager .etr-journal-table th,
 .etr-journal-manager .etr-journal-table td {
-  overflow: visible;
-  padding: 13px 12px;
-  text-overflow: clip;
-  white-space: normal;
-  word-break: break-word;
+  overflow: hidden;
+  padding: 12px 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(1) {
@@ -355,10 +354,18 @@
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(9) {
-  width: 260px;
+  width: 150px;
 }
 
-.etr-journal-manager .etr-journal-table td:nth-child(9) {
+.etr-journal-manager .etr-journal-table th:nth-child(10) {
+  width: 160px;
+}
+
+.etr-journal-manager .etr-journal-table th:nth-child(11) {
+  width: 300px;
+}
+
+.etr-journal-manager .etr-journal-table td:nth-child(11) {
   white-space: normal;
   line-height: 1.35;
 }
@@ -392,9 +399,9 @@
 
 .etr-journal-sort-button span:first-child {
   min-width: 0;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .etr-journal-sort-indicator {
