@@ -5,6 +5,7 @@ import '../css/Journalentry.css';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 const CURRENT_EMPLOYEE_ENDPOINT = '/api/employees/current';
+const EMPLOYEES_ENDPOINT = '/api/employees';
 const ACCOUNT_TITLES_ENDPOINT = '/api/accounttitles';
 const COST_UNITS_ENDPOINT = '/api/costunits';
 const SYSTEM_CLASSIFICATIONS_ENDPOINT = '/api/system-classifications/hierarchical';
@@ -94,10 +95,12 @@ const managerColumns = [
   { key: 'book', label: 'Book' },
   { key: 'entryNumber', label: 'Entry Number' },
   { key: 'entryDate', label: 'Entry Date' },
-  { key: 'referenceNumber', label: 'Reference No.' },
-  { key: 'referenceType', label: 'Type' },
-  { key: 'debitTotal', label: 'Debit', numeric: true },
-  { key: 'creditTotal', label: 'Credit', numeric: true },
+  { key: 'referenceNumber', label: 'Reference Number' },
+  { key: 'referenceType', label: 'Reference Type' },
+  { key: 'createdBy', label: 'Created By' },
+  { key: 'createdDate', label: 'Created Date' },
+  { key: 'lastModifiedBy', label: 'Last Modified By' },
+  { key: 'lastModifiedDate', label: 'Last Modified Date' },
   { key: 'remarks', label: 'Remarks' },
 ];
 
@@ -138,6 +141,14 @@ function getApiCollection(data) {
 
   if (Array.isArray(data?.data)) {
     return data.data;
+  }
+
+  if (Array.isArray(data?.employees)) {
+    return data.employees;
+  }
+
+  if (Array.isArray(data?.employees?.$values)) {
+    return data.employees.$values;
   }
 
   if (Array.isArray(data?.result)) {
@@ -384,6 +395,43 @@ function normalizeCompany(row) {
   };
 }
 
+function normalizeEmployeeLookup(row) {
+  const employeeId = getField(row, ['employeeId', 'employeeID', 'EmployeeID', 'EmployeeId', 'id', 'Id']);
+  const userId = getField(row, ['userId', 'userID', 'UserID', 'UserId'])
+    || getField(row?.user, ['userId', 'userID', 'UserID', 'UserId', 'id', 'Id']);
+  const employeeNo = getField(row, ['employeeNo', 'employeeCode', 'employeeNumber', 'EmployeeNo', 'EmployeeCode', 'EmployeeNumber']);
+  const displayName = getAuditEmployeeName(row);
+
+  if (!employeeId && !userId && !employeeNo && !displayName) {
+    return null;
+  }
+
+  return {
+    employeeId,
+    userId,
+    employeeNo,
+    displayName,
+  };
+}
+
+function findEmployeeName(employees, value, matchOrder = ['userId', 'employeeId', 'employeeNo', 'displayName']) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  for (const fieldName of matchOrder) {
+    const employee = employees.find((row) => String(row[fieldName] || '').trim().toLowerCase() === normalizedValue);
+
+    if (employee?.displayName) {
+      return employee.displayName;
+    }
+  }
+
+  return '';
+}
+
 function normalizeDailyExpenseReference(row) {
   const expenseId = getField(row, ['expenseId', 'ExpenseID', 'ExpenseId', 'id', 'Id']);
   const referenceNo = getField(row, ['referenceNo', 'ReferenceNo']);
@@ -491,7 +539,17 @@ function getReferenceOptionLabel(row) {
   return [row.referenceNo, row.employeeName, row.documentNo].filter(Boolean).join(' - ');
 }
 
-function normalizeApiJournalEntry(row, bookRows = []) {
+function resolveJournalAuditName(row, nameFields, idFields, employeeRows) {
+  const displayName = getField(row, nameFields);
+
+  if (displayName && !isPlaceholderAuditName(displayName)) {
+    return displayName;
+  }
+
+  return findEmployeeName(employeeRows, getField(row, idFields), ['userId', 'employeeId', 'employeeNo', 'displayName']);
+}
+
+function normalizeApiJournalEntry(row, bookRows = [], employeeRows = []) {
   const journalEntryId = Number(row?.journalEntryID ?? row?.journalEntryId ?? 0);
   const entryNumber = getField(row, ['entryNumber', 'EntryNumber']);
   const entryDate = row?.entryDate ?? row?.EntryDate ?? '';
@@ -518,6 +576,36 @@ function normalizeApiJournalEntry(row, bookRows = []) {
     entryDateValue: entryDate,
     referenceNumber: referenceNo,
     referenceType: 'Journal Entry',
+    createdBy: resolveJournalAuditName(row, ['createdByName', 'CreatedByName'], [
+      'createdBy',
+      'CreatedBy',
+      'createdById',
+      'CreatedById',
+      'createdByID',
+      'CreatedByID',
+      'createBy',
+      'CreateBy',
+      'userId',
+      'UserId',
+      'userID',
+      'UserID',
+    ], employeeRows),
+    createdDate: formatDisplayDate(row?.createDate ?? row?.CreateDate ?? ''),
+    lastModifiedBy: resolveJournalAuditName(row, ['lastUpdatedByName', 'LastUpdatedByName'], [
+      'lastUpdatedBy',
+      'LastUpdatedBy',
+      'lastUpdatedById',
+      'LastUpdatedById',
+      'lastUpdatedByID',
+      'LastUpdatedByID',
+      'lastModifiedBy',
+      'LastModifiedBy',
+      'modifiedBy',
+      'ModifiedBy',
+      'updatedBy',
+      'UpdatedBy',
+    ], employeeRows),
+    lastModifiedDate: formatDisplayDate(row?.lastUpdateDate ?? row?.LastUpdateDate ?? ''),
     remarks: getField(row, ['remarks', 'Remarks']),
     debitTotal: Number(row?.debitTotal ?? row?.DebitTotal ?? 0),
     creditTotal: Number(row?.creditTotal ?? row?.CreditTotal ?? 0),
@@ -635,8 +723,8 @@ function getJournalSortValue(row, column) {
     return Number(row[column.key] || 0);
   }
 
-  if (column.key === 'entryDate') {
-    return new Date(row.entryDate).getTime() || 0;
+  if (column.key === 'entryDate' || column.key === 'createdDate' || column.key === 'lastModifiedDate') {
+    return new Date(row[column.key]).getTime() || 0;
   }
 
   return String(row[column.key] || '').toLowerCase();
@@ -667,7 +755,7 @@ function getUserField(user, fieldNames) {
 }
 
 function isPlaceholderAuditName(name) {
-  return /^etr\s+etr$|^etr,\s*etr$/i.test(String(name || '').trim());
+  return false;
 }
 
 function getAuditEmployeeName(user) {
@@ -675,19 +763,10 @@ function getAuditEmployeeName(user) {
     return '';
   }
 
-  const employeeName = getUserField(user, [
-    'employeeName',
-    'EmployeeName',
-    'fullName',
-    'full_name',
-    'FullName',
-    'name',
-    'displayName',
-    'Name',
-  ]);
+  const fullName = getUserField(user, ['employeeName', 'fullName', 'name', 'displayName', 'EmployeeName', 'FullName', 'Name']);
 
-  if (employeeName && !isPlaceholderAuditName(employeeName)) {
-    return employeeName;
+  if (fullName) {
+    return fullName;
   }
 
   const lastName = getUserField(user, ['lastName', 'lastname', 'LastName', 'LASTNAME']);
@@ -695,14 +774,10 @@ function getAuditEmployeeName(user) {
   const middleName = getUserField(user, ['middleName', 'middlename', 'MiddleName', 'MIDDLENAME']);
 
   if (lastName && firstName) {
-    const composed = [lastName, [firstName, middleName].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-
-    if (!isPlaceholderAuditName(composed)) {
-      return composed;
-    }
+    return [lastName, [firstName, middleName].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   }
 
-  return '';
+  return firstName || lastName || getUserField(user, ['username']) || 'Executive Service Account';
 }
 
 function formatAuditDateTime(value) {
@@ -1074,12 +1149,14 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
 
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const [journalResponse, bookResponse] = await Promise.all([
+        const [journalResponse, bookResponse, employeeResponse] = await Promise.all([
           fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(EMPLOYEES_ENDPOINT), { headers, signal: controller.signal }),
         ]);
         const journalData = await journalResponse.json().catch(() => ({}));
         const bookData = await bookResponse.json().catch(() => ({}));
+        const employeeData = await employeeResponse.json().catch(() => ({}));
 
         if (!journalResponse.ok) {
           throw new Error(journalData?.message || 'Unable to load journal entries.');
@@ -1090,8 +1167,11 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         }
 
         const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+        const nextEmployeeRows = employeeResponse.ok
+          ? getApiCollection(employeeData).map(normalizeEmployeeLookup).filter(Boolean)
+          : [];
         setBookRows(nextBookRows);
-        setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows)));
+        setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows, nextEmployeeRows)));
       } catch (error) {
         if (error.name !== 'AbortError') {
           setLoadError(error.message || 'Unable to load journal entries.');
@@ -1390,9 +1470,15 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       remarks: String(data?.remarks || ''),
     }));
     setLines(nextLines);
+
+    const createdName = getField(data, ['createdByName', 'CreatedByName']) || getField(data, ['createdBy', 'CreatedBy']);
+    const createdDate = data?.createDate ?? data?.CreateDate ?? data?.createdDate ?? data?.CreatedDate;
+    const modifiedName = getField(data, ['lastUpdatedByName', 'LastUpdatedByName']) || getField(data, ['lastModifiedBy', 'LastModifiedBy', 'lastUpdatedBy', 'LastUpdatedBy']);
+    const modifiedDate = data?.lastUpdateDate ?? data?.LastUpdateDate ?? data?.lastModifiedDate ?? data?.LastModifiedDate;
+
     setAuditTrail({
-      created: null,
-      modified: null,
+      created: createdName ? { name: createdName, at: createdDate } : null,
+      modified: modifiedName ? { name: modifiedName, at: modifiedDate } : null,
       postedCancelled: null,
     });
   };
@@ -1948,6 +2034,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   };
 
   const handleSaveDraft = async () => {
+    if (header.transactionNo) {
+      return;
+    }
     await submitJournalEntry('save');
   };
 
@@ -2076,54 +2165,25 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         </div>
 
       <div className="etr-journal-actions">
-        {isExistingJournalEntry ? (
-          <>
-            {onBack ? <button type="button" onClick={onBack} disabled={isSubmitting}>Back</button> : null}
-            {!isLocked && permissions.canEdit ? (
-              <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSubmitting}>
-                {isEditingDetail ? 'Cancel Edit' : 'Edit'}
-              </button>
-            ) : null}
-            {isEditingDetail && !isLocked && permissions.canEdit ? (
-              <button type="button" className="is-primary" onClick={handleUpdateDetail} disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : 'Save'}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={handlePostToLedger}
-              disabled={isSubmitting || isLocked || !permissions.canApprove}
-              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
-            >
-              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
-            </button>
-            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
-              Print Voucher
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="is-primary"
-              onClick={handleSaveDraft}
-              disabled={isSubmitting || isLocked || !permissions.canCreate}
-            >
-              {isSubmitting ? 'Saving...' : 'Save Draft'}
-            </button>
-            <button
-              type="button"
-              onClick={handlePostToLedger}
-              disabled={isSubmitting || isLocked || !permissions.canApprove}
-              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
-            >
-              {isSubmitting ? 'Posting...' : 'Post to Ledger'}
-            </button>
-            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
-              Print Voucher
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="is-primary"
+          onClick={handleSaveDraft}
+          disabled={isSubmitting || isLocked || !permissions.canCreate || !!header.transactionNo}
+        >
+          {isSubmitting ? 'Saving...' : 'Save Draft'}
+        </button>
+        <button
+          type="button"
+          onClick={handlePostToLedger}
+          disabled={isSubmitting || isLocked || !permissions.canApprove}
+          title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+        >
+          {isSubmitting ? 'Posting...' : 'Post to Ledger'}
+        </button>
+        <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+          Print Voucher
+        </button>
       </div>
       </div>
 
