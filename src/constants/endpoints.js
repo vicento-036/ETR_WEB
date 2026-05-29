@@ -1,0 +1,17 @@
+export const ENDPOINTS = {
+  accountTitles: '/api/accounttitles',
+  accountTitlePermissions: '/api/account-titles/permissions',
+  bookOfAccounts: '/api/bookofaccounts',
+  companiesSearch: '/api/companies/search',
+  costUnits: '/api/costunits',
+  currentEmployee: '/api/employees/current',
+  dailyExpense: '/api/daily-expense',
+  employees: '/api/employees',
+  journalEntry: '/api/journal-entry',
+  journalEntryDailyExpense: '/api/journal-entry/daily-expense',
+  journalEntryExpenseReport: '/api/journal-entry/expense-report',
+  journalEntryPermissions: '/api/journal-entry/permissions',
+  login: '/api/login',
+  logout: '/api/login/logout',
+  systemClassifications: '/api/system-classifications/hierarchical',
+};
