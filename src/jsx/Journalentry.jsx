@@ -104,6 +104,15 @@ const managerColumns = [
   { key: 'remarks', label: 'Remarks' },
 ];
 
+const managerDetailColumns = [
+  { key: 'accountCode', label: 'Account Code' },
+  { key: 'accountDescription', label: 'Account Description' },
+  { key: 'businessUnit', label: 'Business Unit' },
+  { key: 'debit', label: 'Debit', numeric: true },
+  { key: 'credit', label: 'Credit', numeric: true },
+  { key: 'area', label: 'Area' },
+];
+
 const lineColumns = [
   { key: 'accountCode', label: 'Account Code' },
   { key: 'accountTitle', label: 'Account Title' },
@@ -613,6 +622,23 @@ function normalizeApiJournalEntry(row, bookRows = [], employeeRows = []) {
   };
 }
 
+function normalizeJournalEntryDetail(row) {
+  const area = getField(row, ['area', 'Area']);
+
+  return {
+    id: Number(row?.journalEntryDetailID ?? row?.JournalEntryDetailID ?? row?.detailID ?? row?.DetailID ?? 0)
+      || `${getField(row, ['accountCode', 'AccountCode', 'Account Code'])}-${getField(row, ['debit', 'Debit'])}-${getField(row, ['credit', 'Credit'])}`,
+    journalEntryId: Number(row?.journalEntryID ?? row?.JournalEntryID ?? row?.journalEntryId ?? row?.JournalEntryId ?? 0),
+    accountCode: getField(row, ['accountCode', 'AccountCode', 'Account Code']),
+    accountDescription: getField(row, ['accountDescription', 'AccountDescription', 'Account Description']),
+    businessUnit: getField(row, ['businessUnit', 'BusinessUnit', 'Business Unit']),
+    debit: parseAmount(row?.debit ?? row?.Debit ?? 0),
+    credit: parseAmount(row?.credit ?? row?.Credit ?? 0),
+    area: area === '-1' ? '' : area,
+    remarks: getField(row, ['remarks', 'Remarks']),
+  };
+}
+
 function normalizeJournalStatus(status) {
   const normalized = String(status || '').trim();
 
@@ -1103,11 +1129,16 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'entryDate', direction: 'desc' });
+  const rowClickTimerRef = useRef(null);
   const [entryRows, setEntryRows] = useState([]);
   const [bookRows, setBookRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [permissions, setPermissions] = useState(defaultJournalPermissions);
+  const [selectedDetailEntry, setSelectedDetailEntry] = useState(null);
+  const [detailRows, setDetailRows] = useState([]);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   useEffect(() => {
     const token = getToken();
@@ -1246,6 +1277,67 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     }));
   };
 
+  const handleShowDetails = async (row) => {
+    const journalEntryId = Number(row?.journalEntryId || row?.raw?.journalEntryID || row?.raw?.journalEntryId || 0);
+
+    if (!journalEntryId) {
+      setSelectedDetailEntry(row);
+      setDetailRows([]);
+      setDetailError('Unable to determine the journal entry ID for this row.');
+      return;
+    }
+
+    const token = getToken();
+
+    setSelectedDetailEntry(row);
+    setIsDetailLoading(true);
+    setDetailError('');
+    setDetailRows([]);
+
+    try {
+      const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${journalEntryId}/details`), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to load journal entry details.');
+      }
+
+      setDetailRows(getApiCollection(data).map(normalizeJournalEntryDetail));
+    } catch (error) {
+      setDetailError(error.message || 'Unable to load journal entry details.');
+    } finally {
+      setIsDetailLoading(false);
+    }
+  };
+
+  const handleRowClick = (row) => {
+    if (rowClickTimerRef.current) {
+      window.clearTimeout(rowClickTimerRef.current);
+    }
+
+    rowClickTimerRef.current = window.setTimeout(() => {
+      handleShowDetails(row);
+      rowClickTimerRef.current = null;
+    }, 220);
+  };
+
+  const handleRowDoubleClick = (row) => {
+    if (rowClickTimerRef.current) {
+      window.clearTimeout(rowClickTimerRef.current);
+      rowClickTimerRef.current = null;
+    }
+
+    onOpenEntry?.(row.raw || row);
+  };
+
+  useEffect(() => () => {
+    if (rowClickTimerRef.current) {
+      window.clearTimeout(rowClickTimerRef.current);
+    }
+  }, []);
+
   return (
     <div className="etr-journal-entry etr-journal-manager">
       <div className="etr-journal-toolbar">
@@ -1317,7 +1409,13 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
               ) : null}
 
               {pagedRows.map((row) => (
-                <tr key={row.id} className="etr-expense-clickable-row" onClick={() => onOpenEntry?.(row.raw || row)}>
+                <tr
+                  key={row.id}
+                  className={`etr-expense-clickable-row ${selectedDetailEntry?.journalEntryId === row.journalEntryId ? 'is-selected' : ''}`}
+                  onClick={() => handleRowClick(row)}
+                  onDoubleClick={() => handleRowDoubleClick(row)}
+                  title="Click to show details; double-click to open journal entry"
+                >
                   {managerColumns.map((column) => (
                     <td key={column.key} className={column.numeric ? 'is-number' : ''}>
                       {column.key === 'status' ? (
@@ -1355,6 +1453,63 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
             <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
               Next
             </button>
+          </div>
+        ) : null}
+
+        {selectedDetailEntry ? (
+          <div className="etr-journal-manager-detail-overlay" role="presentation" onMouseDown={() => setSelectedDetailEntry(null)}>
+            <div
+              className="etr-journal-manager-detail-popover"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="etr-journal-manager-detail-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="etr-journal-manager-detail-head">
+                <div>
+                  <span>Journal Entry Details</span>
+                  <h3 id="etr-journal-manager-detail-title">{selectedDetailEntry.entryNumber || `Entry #${selectedDetailEntry.journalEntryId}`}</h3>
+                </div>
+                <button type="button" onClick={() => setSelectedDetailEntry(null)}>Close</button>
+              </div>
+
+              {detailError ? <div className="etr-journal-action-message is-error">{detailError}</div> : null}
+
+              <div className="etr-journal-lines-wrap">
+                <table className="etr-journal-lines etr-journal-manager-detail-table">
+                  <thead>
+                    <tr>
+                      {managerDetailColumns.map((column) => (
+                        <th key={column.key}>{column.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isDetailLoading ? (
+                      <tr>
+                        <td colSpan={managerDetailColumns.length}>Loading details...</td>
+                      </tr>
+                    ) : null}
+
+                    {!isDetailLoading && detailRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={managerDetailColumns.length}>No details found for this journal entry.</td>
+                      </tr>
+                    ) : null}
+
+                    {!isDetailLoading ? detailRows.map((detail, detailIndex) => (
+                      <tr key={`${detail.id}-${detailIndex}`}>
+                        {managerDetailColumns.map((column) => (
+                          <td key={column.key} className={column.numeric ? 'is-number' : ''}>
+                            {column.numeric ? formatMoney(detail[column.key]) : detail[column.key]}
+                          </td>
+                        ))}
+                      </tr>
+                    )) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         ) : null}
       </section>
