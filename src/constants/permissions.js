@@ -4,5 +4,6 @@ export const defaultJournalPermissions = {
   canEdit: false,
   canSearch: false,
   canApprove: false,
+  canPost: false,
   canPrint: false,
 };

@@ -24,6 +24,7 @@ const defaultJournalPermissions = {
   canEdit: false,
   canSearch: false,
   canApprove: false,
+  canPost: false,
   canPrint: false,
 };
 
@@ -79,6 +80,7 @@ function createDefaultJournalHeader() {
     referenceType: '',
     referenceNo: '',
     company: '',
+    cancellationRemarks: '',
     remarks: '',
   };
 }
@@ -287,7 +289,8 @@ function normalizeJournalPermissions(data) {
     canDelete: getJournalPermission(source, ['canDelete', 'CanDelete', 'delete', 'Delete', 'remove', 'Remove'], fullAccess),
     canEdit: getJournalPermission(source, ['canEdit', 'CanEdit', 'edit', 'Edit', 'canUpdate', 'CanUpdate', 'update', 'Update'], fullAccess),
     canSearch: getJournalPermission(source, ['canSearch', 'CanSearch', 'search', 'Search', 'canView', 'CanView', 'canRead', 'CanRead', 'view', 'View'], fullAccess),
-    canApprove: getJournalPermission(source, ['canApprove', 'CanApprove', 'approve', 'Approve', 'canPost', 'CanPost', 'post', 'Post', 'canPostToLedger', 'CanPostToLedger'], fullAccess),
+    canApprove: getJournalPermission(source, ['canApprove', 'CanApprove', 'approve', 'Approve'], fullAccess),
+    canPost: getJournalPermission(source, ['canPost', 'CanPost', 'post', 'Post', 'canPostToLedger', 'CanPostToLedger', 'canApprove', 'CanApprove', 'approve', 'Approve'], fullAccess),
     canPrint: getJournalPermission(source, ['canPrint', 'CanPrint', 'print', 'Print', 'canPrintVoucher', 'CanPrintVoucher', 'voucher', 'Voucher'], fullAccess),
   };
 }
@@ -756,6 +759,35 @@ function JournalLineLookupModal({ lookup, searchTerm, onSearchChange, onSelect, 
   );
 }
 
+function PostJournalEntryConfirmDialog({ isSubmitting, onConfirm, onCancel }) {
+  return (
+    <div className="etr-journal-post-overlay" role="presentation" onMouseDown={onCancel}>
+      <section
+        className="etr-journal-post-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-journal-post-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-journal-post-titlebar">
+          <h2 id="etr-journal-post-title">Post</h2>
+          <button type="button" onClick={onCancel} aria-label="Close post confirmation" disabled={isSubmitting}>×</button>
+        </div>
+        <div className="etr-journal-post-body">
+          <div className="etr-journal-post-icon" aria-hidden="true">?</div>
+          <p>Are you sure you want to post this journal entry?</p>
+        </div>
+        <div className="etr-journal-post-actions">
+          <button type="button" className="is-primary" onClick={onConfirm} disabled={isSubmitting}>
+            {isSubmitting ? 'Posting...' : 'Yes'}
+          </button>
+          <button type="button" onClick={onCancel} disabled={isSubmitting}>No</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function getJournalSortValue(row, column) {
   if (column.numeric) {
     return Number(row[column.key] || 0);
@@ -838,6 +870,16 @@ function formatAuditDateTime(value) {
   });
 
   return `${datePart} ${timePart}`;
+}
+
+function isMeaningfulAuditDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.getFullYear() > 1900;
 }
 
 function formatAuditStamp(name, value) {
@@ -1534,8 +1576,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const [isLookupsLoading, setIsLookupsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditingDetail, setIsEditingDetail] = useState(false);
+  const [showPostConfirm, setShowPostConfirm] = useState(false);
   const [header, setHeader] = useState(createDefaultJournalHeader);
   const [lines, setLines] = useState(createDefaultJournalLines);
+  const [savedJournalEntryId, setSavedJournalEntryId] = useState(0);
   const [lineLookup, setLineLookup] = useState(null);
   const [lineLookupSearch, setLineLookupSearch] = useState('');
   const [permissions, setPermissions] = useState(defaultJournalPermissions);
@@ -1571,6 +1615,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   }, [user]);
 
   const applyJournalEntryRecord = (data, nextBookRows = bookRows, nextAccountTitleRows = accountTitleRows, nextCostUnitRows = costUnitRows, nextClassificationRows = classificationRows) => {
+    setSavedJournalEntryId(Number(data?.journalEntryID ?? data?.journalEntryId ?? 0));
+
     const resolvedBook = findBook(nextBookRows, String(data?.bookID ?? data?.bookId ?? ''));
     const nextLines = Array.isArray(data?.details) && data.details.length > 0
       ? data.details.map((detail, index) => {
@@ -1624,6 +1670,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       referenceId: Number(data?.referenceType ?? data?.ReferenceType) === 32768 ? String(data?.referenceID ?? data?.referenceId ?? '') : '',
       referenceType: getJournalEntryReferenceTypeLabel(data, current.referenceType),
       referenceNo: String(data?.referenceNo || ''),
+      cancellationRemarks: String(data?.cancellationReason ?? data?.CancellationReason ?? data?.cancellationRemarks ?? data?.CancellationRemarks ?? current.cancellationRemarks ?? ''),
       remarks: String(data?.remarks || ''),
     }));
     setLines(nextLines);
@@ -1632,11 +1679,20 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     const createdDate = data?.createDate ?? data?.CreateDate ?? data?.createdDate ?? data?.CreatedDate;
     const modifiedName = getField(data, ['lastUpdatedByName', 'LastUpdatedByName']) || getField(data, ['lastModifiedBy', 'LastModifiedBy', 'lastUpdatedBy', 'LastUpdatedBy']);
     const modifiedDate = data?.lastUpdateDate ?? data?.LastUpdateDate ?? data?.lastModifiedDate ?? data?.LastModifiedDate;
+    const statusLabel = getField(data, ['statusLabel', 'StatusLabel']) || 'Pending';
+    const postedDate = data?.postedDate ?? data?.PostedDate;
+    const postedName = getField(data, ['postedByName', 'PostedByName'])
+      || (isMeaningfulAuditDate(postedDate) ? modifiedName : '');
+    const postedCancelled = statusLabel === 'Posted' && postedName && isMeaningfulAuditDate(postedDate)
+      ? { name: postedName, at: postedDate }
+      : statusLabel === 'Cancelled' && modifiedName && isMeaningfulAuditDate(modifiedDate)
+        ? { name: modifiedName, at: modifiedDate }
+        : null;
 
     setAuditTrail({
       created: createdName ? { name: createdName, at: createdDate } : null,
       modified: modifiedName ? { name: modifiedName, at: modifiedDate } : null,
-      postedCancelled: null,
+      postedCancelled,
     });
   };
 
@@ -1851,6 +1907,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     setIsEditingDetail(false);
     setActionMessage('');
     setActionError('');
+    setSavedJournalEntryId(Number(selectedJournalEntry?.journalEntryId ?? selectedJournalEntry?.journalEntryID ?? 0));
   }, [selectedJournalEntry]);
 
   const auditUserName = getAuditEmployeeName(employeeInfo);
@@ -1873,7 +1930,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const varianceLabel = formatMoney(Math.abs(totals.variance));
   const signedVarianceLabel = varianceLabel;
   const selectedJournalEntryId = Number(selectedJournalEntry?.journalEntryId ?? selectedJournalEntry?.journalEntryID ?? 0);
-  const isExistingJournalEntry = selectedJournalEntryId > 0;
+  const activeJournalEntryId = selectedJournalEntryId || savedJournalEntryId;
+  const isExistingJournalEntry = activeJournalEntryId > 0;
   const normalizedStatus = normalizeJournalStatus(header.status);
   const displayStatus = header.transactionNo ? (normalizedStatus || 'Pending') : '';
   const isPosted = normalizedStatus === 'Posted';
@@ -2126,6 +2184,28 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     };
   };
 
+  const postJournalEntryById = async (journalEntryId) => {
+    if (!journalEntryId) {
+      throw new Error('Save the journal entry before posting.');
+    }
+
+    const token = getToken();
+    const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${journalEntryId}/post`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || 'Unable to post journal entry.');
+    }
+
+    return data;
+  };
+
   const submitJournalEntry = async (mode = 'save') => {
     clearActionFeedback();
 
@@ -2166,24 +2246,39 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       }
 
       const now = new Date();
+      const nextJournalEntryId = Number(data?.journalEntryId ?? data?.journalEntryID ?? activeJournalEntryId ?? 0);
+      let nextStatus = 'Pending';
+      let postedAt = null;
+
+      if (mode === 'post') {
+        try {
+          await postJournalEntryById(nextJournalEntryId);
+          nextStatus = 'Posted';
+          postedAt = new Date();
+        } catch (error) {
+          throw new Error(`Journal entry was saved, but posting failed: ${error.message || 'Unable to post journal entry.'}`);
+        }
+      }
+
       const savedHeader = {
         ...header,
-        status: 'Pending',
+        status: nextStatus,
         transactionNo: String(data?.entryNumber || ''),
         referenceNo: String(data?.referenceNo ?? header.referenceNo),
         referenceType: isDailyExpenseEntry ? 'Journal Entry' : '',
       };
 
+      setSavedJournalEntryId(nextJournalEntryId);
       setHeader(savedHeader);
       setAuditTrail({
         created: { name: auditUserName || getUserDisplayName(user), at: now },
         modified: { name: auditUserName || getUserDisplayName(user), at: now },
-        postedCancelled: null,
+        postedCancelled: postedAt ? { name: auditUserName || getUserDisplayName(user), at: postedAt } : null,
       });
       clearJournalDraftStorage();
       setActionMessage(
         mode === 'post'
-          ? 'Journal entry saved successfully.'
+          ? 'Journal entry posted successfully.'
           : 'Journal entry saved successfully.',
       );
       onSaved?.();
@@ -2204,7 +2299,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
   const handleUpdateDetail = async () => {
     clearActionFeedback();
 
-    if (!selectedJournalEntryId) {
+    if (!activeJournalEntryId) {
       setActionError('Select a journal entry first.');
       return;
     }
@@ -2224,9 +2319,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     setIsSubmitting(true);
 
     try {
-      const { payload } = buildJournalPayload(selectedJournalEntryId);
+      const { payload } = buildJournalPayload(activeJournalEntryId);
       const token = getToken();
-      const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${selectedJournalEntryId}`), {
+      const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${activeJournalEntryId}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -2255,16 +2350,60 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     }
   };
 
-  const handlePostToLedger = async () => {
+  const executePostToLedger = async () => {
     clearActionFeedback();
+    setShowPostConfirm(false);
 
-    const confirmed = window.confirm('Save this journal entry to the WebAPI?');
-
-    if (!confirmed) {
+    if (!activeJournalEntryId) {
+      await submitJournalEntry('post');
       return;
     }
 
-    await submitJournalEntry('post');
+    setIsSubmitting(true);
+
+    try {
+      await postJournalEntryById(activeJournalEntryId);
+      const postedAt = new Date();
+
+      setHeader((current) => ({
+        ...current,
+        status: 'Posted',
+      }));
+      setAuditTrail((current) => ({
+        ...current,
+        modified: { name: auditUserName || getUserDisplayName(user), at: postedAt },
+        postedCancelled: { name: auditUserName || getUserDisplayName(user), at: postedAt },
+      }));
+      setActionMessage('Journal entry posted successfully.');
+      onSaved?.();
+    } catch (error) {
+      setActionError(error.message || 'Unable to post journal entry.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePostToLedger = async () => {
+    clearActionFeedback();
+
+    if (!permissions.canPost) {
+      setActionError('You do not have permission to post journal entries.');
+      return;
+    }
+
+    if (isLocked) {
+      setActionError('This journal entry cannot be posted.');
+      return;
+    }
+
+    const validationErrors = validateJournalEntry(header, lines, { requireBalanced: true });
+
+    if (validationErrors.length > 0) {
+      setActionError(validationErrors.join(' '));
+      return;
+    }
+
+    setShowPostConfirm(true);
   };
 
   const handlePrintVoucher = () => {
@@ -2345,8 +2484,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             <button
               type="button"
               onClick={handlePostToLedger}
-              disabled={isSubmitting || isLocked || !permissions.canApprove}
-              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+              disabled={isSubmitting || isLocked || !permissions.canPost}
+              title={!permissions.canPost ? 'Post permission is required' : (!isBalanced ? 'Debit and credit must balance before posting' : undefined)}
             >
               {isSubmitting ? 'Posting...' : 'Post to Ledger'}
             </button>
@@ -2367,8 +2506,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             <button
               type="button"
               onClick={handlePostToLedger}
-              disabled={isSubmitting || isLocked || !permissions.canApprove}
-              title={!isBalanced ? 'Debit and credit must balance before posting' : undefined}
+              disabled={isSubmitting || isLocked || !permissions.canPost}
+              title={!permissions.canPost ? 'Post permission is required' : (!isBalanced ? 'Debit and credit must balance before posting' : undefined)}
             >
               {isSubmitting ? 'Posting...' : 'Post to Ledger'}
             </button>
@@ -2468,7 +2607,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field">
                     <span>Cancellation Remarks</span>
-                    <textarea rows={3} placeholder="No cancellation remarks" readOnly={isReadOnlyDetail} />
+                    <textarea value={header.cancellationRemarks || ''} rows={3} placeholder="No cancellation remarks" readOnly />
                   </label>
                 </div>
               </section>
@@ -2607,6 +2746,13 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         onSelect={selectLineLookupRow}
         onClose={closeLineLookup}
       />
+      {showPostConfirm ? (
+        <PostJournalEntryConfirmDialog
+          isSubmitting={isSubmitting}
+          onConfirm={executePostToLedger}
+          onCancel={() => setShowPostConfirm(false)}
+        />
+      ) : null}
     </div>
   );
 }

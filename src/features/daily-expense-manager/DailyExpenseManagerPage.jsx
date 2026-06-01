@@ -246,6 +246,38 @@ function getGeneratedNoFromApi(data) {
   ]);
 }
 
+function getExpenseReportHeader(data) {
+  return data?.header || data?.Header || data?.data?.header || data?.data?.Header || {};
+}
+
+function getExpenseReportReferenceNo(data) {
+  const header = getExpenseReportHeader(data);
+  return String(
+    data?.erNo
+    || data?.ERNo
+    || header?.referenceNo
+    || header?.ReferenceNo
+    || '',
+  ).trim();
+}
+
+function isExistingExpenseReport(data) {
+  const header = getExpenseReportHeader(data);
+  const existingPosted = header?.existingJournalEntryPosted ?? header?.ExistingJournalEntryPosted;
+  const existingStatus = Number(header?.existingJournalEntryStatus ?? header?.ExistingJournalEntryStatus ?? 0);
+  const existingStatusLabel = String(header?.existingJournalEntryStatusLabel || header?.ExistingJournalEntryStatusLabel || '').trim().toLowerCase();
+
+  return existingPosted === true || existingStatus === 1 || existingStatusLabel === 'posted';
+}
+
+function hasExistingExpenseReportJournalEntry(data) {
+  const header = getExpenseReportHeader(data);
+  const existingJournalEntryId = Number(header?.existingJournalEntryID ?? header?.ExistingJournalEntryID ?? 0);
+  const existingJournalEntryNumber = String(header?.existingJournalEntryNumber || header?.ExistingJournalEntryNumber || '').trim();
+
+  return existingJournalEntryId > 0 || existingJournalEntryNumber.length > 0;
+}
+
 function normalizeBook(row) {
   const bookId = getField(row, ['bookId', 'bookID', 'BookID', 'BookId', 'bookOfAccountId', 'BookOfAccountID', 'BookOfAccountId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code']);
@@ -1736,7 +1768,8 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     return normalizeErSummaryRows(data, dateFrom);
   };
 
-  const previewExpenseReport = async (erNo) => {
+  const previewExpenseReport = async (erNo, options = {}) => {
+    const { applyState = true, postedOnly = false } = options;
     const token = getToken();
 
     if (!currentEmployeeId) {
@@ -1764,8 +1797,60 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       throw new Error(data?.message || 'Unable to preview expense report.');
     }
 
+    const header = getExpenseReportHeader(data);
+    const resolvedReferenceNo = getExpenseReportReferenceNo(data);
+    const originalReferenceNo = String(header?.originalReferenceNo || header?.OriginalReferenceNo || '').trim();
+    const existingPosted = isExistingExpenseReport(data);
+
+    if (applyState && resolvedReferenceNo && (!postedOnly || existingPosted)) {
+      setReportNo(resolvedReferenceNo);
+    }
+
+    if (applyState && !postedOnly) {
+      setOriginalReportNo(originalReferenceNo);
+      setHasExistingJournal(existingPosted);
+    }
+
+    if (applyState && postedOnly && existingPosted) {
+      setOriginalReportNo(originalReferenceNo || resolvedReferenceNo);
+      setHasExistingJournal(true);
+    }
+
     return data;
   };
+
+  useEffect(() => {
+    if (filteredReportRows.length === 0 || !currentEmployeeId || !dateFrom || !dateTo) {
+      return undefined;
+    }
+
+    let isActive = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const data = await previewExpenseReport('', { postedOnly: true });
+
+        if (!isActive || !isExistingExpenseReport(data)) {
+          return;
+        }
+
+        const resolvedErNo = getExpenseReportReferenceNo(data);
+        if (resolvedErNo) {
+          setReportNo(resolvedErNo);
+          setOriginalReportNo(resolvedErNo);
+          setHasExistingJournal(true);
+        }
+      } catch {
+        if (isActive) {
+          setHasExistingJournal(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(timer);
+    };
+  }, [currentEmployeeId, dateFrom, dateTo, filteredReportRows.length, purpose]);
 
   const finalizeErForm = async (erNo) => {
     const token = getToken();
@@ -1872,13 +1957,20 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       setIsGeneratingNo(true);
       // Fetch the generated reference number first to be used for printing and posting
       const previewData = await previewExpenseReport("");
-      const resolvedErNo = previewData.erNo || previewData.header?.referenceNo || "";
+      const resolvedErNo = getExpenseReportReferenceNo(previewData);
 
       if (!resolvedErNo) {
         throw new Error('Unable to resolve or generate report number.');
       }
 
       setReportNo(resolvedErNo);
+
+      if (hasExistingExpenseReportJournalEntry(previewData) && !isExistingExpenseReport(previewData)) {
+        setReportNo(resolvedErNo);
+        setHasExistingJournal(false);
+        setReportNoError('Existing journal entry is still pending. Post it before printing this expense report.');
+        return;
+      }
 
       const summaryRows = await loadErSummaryRows();
       const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
@@ -1896,6 +1988,13 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       });
 
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
+
+      if (isExistingExpenseReport(previewData)) {
+        setReportNo(resolvedErNo);
+        setHasExistingJournal(true);
+        setReportNoError('Posted journal entry found. Reprinted without creating another journal entry.');
+        return;
+      }
 
       const finalizeResult = await finalizeErForm(resolvedErNo);
       const finalizedErNo = String(finalizeResult?.erNo || resolvedErNo).trim();
@@ -1915,7 +2014,8 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         statusLabel: 'Pending',
       });
       setReportNo(finalizedErNo);
-      setHasExistingJournal(true);
+      setHasExistingJournal(false);
+      setReportNoError('Journal entry created. Post it before this report becomes reprint-ready.');
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
     } finally {
@@ -2031,7 +2131,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
             {hasExistingJournal ? (
               <div className="etr-report-status-banner is-posted">
-                <strong>Already posted to Journal Entry</strong>
+                <strong>Posted Journal Entry found</strong>
                 <span>Reference No: {reportNo}</span>
               </div>
             ) : null}
