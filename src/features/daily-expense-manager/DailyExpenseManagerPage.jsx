@@ -1620,6 +1620,12 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       return true;
     });
   }, [approvedRows, currentEmployeeId, dateFrom, dateTo]);
+  const hasPrintedReportRows = useMemo(() => filteredReportRows.some((row) => (
+    row.printed === true
+    || row.Printed === true
+    || String(row.printed ?? row.Printed ?? '').trim().toLowerCase() === 'true'
+    || Number(row.printed ?? row.Printed ?? 0) === 1
+  )), [filteredReportRows]);
 
   const getSelectedExpenseIds = () => filteredReportRows
     .map((row) => Number(row.expenseId || row.expenseID || row.ExpenseID || row.ExpenseId || 0))
@@ -1801,9 +1807,10 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     const resolvedReferenceNo = getExpenseReportReferenceNo(data);
     const originalReferenceNo = String(header?.originalReferenceNo || header?.OriginalReferenceNo || '').trim();
     const existingPosted = isExistingExpenseReport(data);
+    const displayReferenceNo = existingPosted && originalReferenceNo ? originalReferenceNo : resolvedReferenceNo;
 
-    if (applyState && resolvedReferenceNo && (!postedOnly || existingPosted)) {
-      setReportNo(resolvedReferenceNo);
+    if (applyState && displayReferenceNo && (!postedOnly || existingPosted)) {
+      setReportNo(displayReferenceNo);
     }
 
     if (applyState && !postedOnly) {
@@ -1833,7 +1840,8 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
           return;
         }
 
-        const resolvedErNo = getExpenseReportReferenceNo(data);
+        const header = getExpenseReportHeader(data);
+        const resolvedErNo = String(header?.originalReferenceNo || header?.OriginalReferenceNo || getExpenseReportReferenceNo(data)).trim();
         if (resolvedErNo) {
           setReportNo(resolvedErNo);
           setOriginalReportNo(resolvedErNo);
@@ -1969,6 +1977,13 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         setReportNo(resolvedErNo);
         setHasExistingJournal(false);
         setReportNoError('Existing journal entry is still pending. Post it before printing this expense report.');
+        return;
+      }
+
+      if (hasPrintedReportRows && !isExistingExpenseReport(previewData)) {
+        setReportNo(resolvedErNo);
+        setHasExistingJournal(false);
+        setReportNoError('Expense report was already printed. Post the existing journal entry before reprinting this expense report.');
         return;
       }
 
