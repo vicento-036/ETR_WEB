@@ -1589,7 +1589,9 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
   const [originalReportNo, setOriginalReportNo] = useState('');
   const [reportNoError, setReportNoError] = useState('');
   const [hasExistingJournal, setHasExistingJournal] = useState(false);
+  const [hasPendingJournal, setHasPendingJournal] = useState(false);
   const [isGeneratingNo, setIsGeneratingNo] = useState(false);
+  const isReportNoSuccessMessage = /successfully|created|found/i.test(reportNoError);
   const approvedRows = useMemo(() => rows.filter((row) => normalizeExpenseStatusValue(row.statusValue ?? row.status) === 1), [rows]);
   const filteredReportRows = useMemo(() => {
     return approvedRows.filter((row) => {
@@ -1639,12 +1641,14 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       setReportNo('');
       setOriginalReportNo('');
       setHasExistingJournal(false);
+      setHasPendingJournal(false);
       setReportNoError('');
       return;
     }
     setReportNo('');
     setOriginalReportNo('');
     setHasExistingJournal(false);
+    setHasPendingJournal(false);
     setReportNoError('');
   }, [dateFrom, dateTo, currentEmployeeId, filteredReportRows.length, purpose]);
 
@@ -1816,11 +1820,13 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
     if (applyState && !postedOnly) {
       setOriginalReportNo(originalReferenceNo);
       setHasExistingJournal(existingPosted);
+      setHasPendingJournal(hasExistingExpenseReportJournalEntry(data) && !existingPosted);
     }
 
     if (applyState && postedOnly && existingPosted) {
       setOriginalReportNo(originalReferenceNo || resolvedReferenceNo);
       setHasExistingJournal(true);
+      setHasPendingJournal(false);
     }
 
     return data;
@@ -1846,6 +1852,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
           setReportNo(resolvedErNo);
           setOriginalReportNo(resolvedErNo);
           setHasExistingJournal(true);
+          setHasPendingJournal(false);
         }
       } catch {
         if (isActive) {
@@ -1954,6 +1961,16 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       return;
     }
 
+    if (hasExistingJournal) {
+      await handleReprintErForm();
+      return;
+    }
+
+    if (hasPendingJournal) {
+      setReportNoError('Existing journal entry is still pending. Post it before reprinting this expense report.');
+      return;
+    }
+
     if (filteredReportRows.length === 0) {
       setReportNoError('No transactions found for the selected date range.');
       return;
@@ -1976,6 +1993,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       if (hasExistingExpenseReportJournalEntry(previewData) && !isExistingExpenseReport(previewData)) {
         setReportNo(resolvedErNo);
         setHasExistingJournal(false);
+        setHasPendingJournal(true);
         setReportNoError('Existing journal entry is still pending. Post it before printing this expense report.');
         return;
       }
@@ -1983,6 +2001,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       if (hasPrintedReportRows && !isExistingExpenseReport(previewData)) {
         setReportNo(resolvedErNo);
         setHasExistingJournal(false);
+        setHasPendingJournal(true);
         setReportNoError('Expense report was already printed. Post the existing journal entry before reprinting this expense report.');
         return;
       }
@@ -2007,6 +2026,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       if (isExistingExpenseReport(previewData)) {
         setReportNo(resolvedErNo);
         setHasExistingJournal(true);
+        setHasPendingJournal(false);
         setReportNoError('Posted journal entry found. Reprinted without creating another journal entry.');
         return;
       }
@@ -2019,17 +2039,31 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
       }
 
       const journalEntry = await createExpenseReportJournalEntry(finalizedErNo);
+      const journalEntryStatus = Number(journalEntry?.status ?? journalEntry?.Status ?? 0);
+      const journalEntryStatusLabel = String(journalEntry?.statusLabel || journalEntry?.StatusLabel || '').trim();
+      const journalEntryReferenceNo = String(journalEntry?.referenceNo || journalEntry?.ReferenceNo || finalizedErNo).trim();
+
+      if (journalEntryStatus === 1 || journalEntryStatusLabel.toLowerCase() === 'posted') {
+        setReportNo(journalEntryReferenceNo);
+        setOriginalReportNo(journalEntryReferenceNo);
+        setHasExistingJournal(true);
+        setHasPendingJournal(false);
+        setReportNoError('Posted journal entry found. Reprinted without creating another journal entry.');
+        return;
+      }
+
       onJournalEntryCreated?.({
         journalEntryId: journalEntry?.journalEntryId || 0,
         entryNumber: journalEntry?.entryNumber || '',
-        referenceNo: journalEntry?.referenceNo || finalizedErNo,
+        referenceNo: journalEntryReferenceNo,
         referenceType: journalEntry?.referenceType || 32769,
         referenceTypeLabel: 'Expense Report',
-        status: 0,
-        statusLabel: 'Pending',
+        status: journalEntryStatus,
+        statusLabel: journalEntryStatusLabel || 'Pending',
       });
-      setReportNo(finalizedErNo);
+      setReportNo(journalEntryReferenceNo);
       setHasExistingJournal(false);
+      setHasPendingJournal(true);
       setReportNoError('Journal entry created. Post it before this report becomes reprint-ready.');
     } catch (error) {
       setReportNoError(error.message || 'Unable to generate ER form.');
@@ -2047,14 +2081,27 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
     try {
       setIsGeneratingNo(true);
-      // Just preview using the existing reportNo and download PDF
-      await previewExpenseReport(reportNo);
+      // Reprint must use the original posted ER number, not a newly generated one.
+      const previewData = await previewExpenseReport(reportNo || originalReportNo);
+      const previewHeader = getExpenseReportHeader(previewData);
+      const reprintReportNo = String(
+        previewHeader?.originalReferenceNo
+        || previewHeader?.OriginalReferenceNo
+        || getExpenseReportReferenceNo(previewData)
+        || reportNo
+        || originalReportNo
+      ).trim();
+
+      if (!reprintReportNo) {
+        throw new Error('Unable to resolve the original expense report number for reprint.');
+      }
+
       const summaryRows = await loadErSummaryRows();
       const summaryGrandTotal = summaryRows.reduce((sum, row) => sum + row.total, 0);
 
       const pdfBlob = buildErFormPdfBlob({
         rows: summaryRows,
-        reportNo: reportNo,
+        reportNo: reprintReportNo,
         employeeNo,
         employeeName,
         purpose,
@@ -2064,6 +2111,8 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
         grandTotal: summaryGrandTotal,
       });
 
+      setReportNo(reprintReportNo);
+      setOriginalReportNo(reprintReportNo);
       downloadBlob(pdfBlob, `ExpenseReport-${reportDate}.pdf`);
       setReportNoError("Expense report reprinted successfully.");
     } catch (error) {
@@ -2097,7 +2146,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
 
         {loadError ? <div className="etr-expense-save-message is-error">{loadError}</div> : null}
         {employeeLoadError ? <div className="etr-expense-save-message is-error">{employeeLoadError}</div> : null}
-        {reportNoError ? <div className="etr-expense-save-message is-error">{reportNoError}</div> : null}
+        {reportNoError ? <div className={`etr-expense-save-message ${isReportNoSuccessMessage ? '' : 'is-error'}`}>{reportNoError}</div> : null}
 
         <div className="etr-report-builder-layout">
           <div className="etr-report-control-grid">
@@ -2150,6 +2199,12 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                 <span>Reference No: {reportNo}</span>
               </div>
             ) : null}
+            {hasPendingJournal ? (
+              <div className="etr-report-status-banner">
+                <strong>Pending Journal Entry found</strong>
+                <span>Reference No: {reportNo}</span>
+              </div>
+            ) : null}
 
             <div className="etr-report-action-buttons">
               <button type="button" className="etr-report-generate-button" onClick={handleGenerateReport} disabled={isLoading || isGeneratingNo || !!loadError}>
@@ -2160,7 +2215,7 @@ function ExpenseReportView({ rows, user, isLoading = false, loadError = '', onBa
                   {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Reprinting...' : 'Reprint Expense Report'}
                 </button>
               ) : (
-                <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || isGeneratingNo || !!loadError}>
+                <button type="button" className="etr-report-generate-button" onClick={handleGenerateErForm} disabled={isLoading || isGeneratingNo || !!loadError || hasPendingJournal} title={hasPendingJournal ? 'Post the existing journal entry before reprinting this expense report.' : undefined}>
                   {isLoading ? 'Loading Expenses...' : isGeneratingNo ? 'Generating ER #...' : 'Expense Report'}
                 </button>
               )}
