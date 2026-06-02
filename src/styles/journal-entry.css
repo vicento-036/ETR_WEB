@@ -206,6 +206,37 @@
   background: transparent;
 }
 
+.etr-journal-bulk-post-actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  min-height: 58px;
+}
+
+.etr-journal-bulk-post-actions span {
+  min-width: 74px;
+  color: #56708c;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.etr-journal-bulk-post-actions button {
+  min-height: 36px;
+  border: 1px solid rgba(18, 62, 109, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #1b5a96, #123e6d);
+  color: #ffffff;
+  font-weight: 900;
+  cursor: pointer;
+  padding: 0 14px;
+}
+
+.etr-journal-bulk-post-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .etr-journal-panel-head h2 {
   margin: 0 0 4px;
   color: #12314e;
@@ -291,7 +322,7 @@
 }
 
 .etr-journal-manager .etr-journal-table {
-  min-width: 1720px;
+  min-width: 1770px;
   table-layout: auto;
 }
 
@@ -331,42 +362,60 @@
   white-space: nowrap;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(1) {
-  width: 108px;
+.etr-journal-manager .etr-journal-table .etr-journal-select-column {
+  width: 46px;
+  min-width: 46px;
+  text-align: center;
+}
+
+.etr-journal-select-column input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1b5a96;
+  cursor: pointer;
+}
+
+.etr-journal-select-column input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(2) {
-  width: 160px;
+  width: 108px;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(3),
-.etr-journal-manager .etr-journal-table th:nth-child(5) {
-  width: 148px;
+.etr-journal-manager .etr-journal-table th:nth-child(3) {
+  width: 160px;
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(4),
 .etr-journal-manager .etr-journal-table th:nth-child(6) {
+  width: 148px;
+}
+
+.etr-journal-manager .etr-journal-table th:nth-child(5),
+.etr-journal-manager .etr-journal-table th:nth-child(7) {
   width: 126px;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(7),
-.etr-journal-manager .etr-journal-table th:nth-child(8) {
+.etr-journal-manager .etr-journal-table th:nth-child(8),
+.etr-journal-manager .etr-journal-table th:nth-child(9) {
   width: 124px;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(9) {
+.etr-journal-manager .etr-journal-table th:nth-child(10) {
   width: 150px;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(10) {
+.etr-journal-manager .etr-journal-table th:nth-child(11) {
   width: 160px;
 }
 
-.etr-journal-manager .etr-journal-table th:nth-child(11) {
+.etr-journal-manager .etr-journal-table th:nth-child(12) {
   width: 300px;
 }
 
-.etr-journal-manager .etr-journal-table td:nth-child(11) {
+.etr-journal-manager .etr-journal-table td:nth-child(12) {
   white-space: normal;
   line-height: 1.35;
 }

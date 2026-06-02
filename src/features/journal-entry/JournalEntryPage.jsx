@@ -759,7 +759,12 @@ function JournalLineLookupModal({ lookup, searchTerm, onSearchChange, onSelect, 
   );
 }
 
-function PostJournalEntryConfirmDialog({ isSubmitting, onConfirm, onCancel }) {
+function PostJournalEntryConfirmDialog({
+  isSubmitting,
+  onConfirm,
+  onCancel,
+  message = 'Are you sure you want to post this journal entry?',
+}) {
   return (
     <div className="etr-journal-post-overlay" role="presentation" onMouseDown={onCancel}>
       <section
@@ -775,7 +780,7 @@ function PostJournalEntryConfirmDialog({ isSubmitting, onConfirm, onCancel }) {
         </div>
         <div className="etr-journal-post-body">
           <div className="etr-journal-post-icon" aria-hidden="true">?</div>
-          <p>Are you sure you want to post this journal entry?</p>
+          <p>{message}</p>
         </div>
         <div className="etr-journal-post-actions">
           <button type="button" className="is-primary" onClick={onConfirm} disabled={isSubmitting}>
@@ -1193,6 +1198,11 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [detailRows, setDetailRows] = useState([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const [selectedPostIds, setSelectedPostIds] = useState(() => new Set());
+  const [isBulkPosting, setIsBulkPosting] = useState(false);
+  const [bulkPostMessage, setBulkPostMessage] = useState('');
+  const [bulkPostError, setBulkPostError] = useState('');
+  const [showBulkPostConfirm, setShowBulkPostConfirm] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -1315,6 +1325,10 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
   const visiblePages = getVisiblePages(page, totalPages);
   const pagedRows = sortedRows.slice((page - 1) * MANAGER_PAGE_SIZE, page * MANAGER_PAGE_SIZE);
+  const pendingPagedRows = pagedRows.filter((row) => normalizeJournalStatus(row.status) === 'Pending' && Number(row.journalEntryId || 0) > 0);
+  const selectedPostCount = selectedPostIds.size;
+  const areAllPendingPagedRowsSelected = pendingPagedRows.length > 0
+    && pendingPagedRows.every((row) => selectedPostIds.has(Number(row.journalEntryId)));
 
   useEffect(() => {
     setPage(1);
@@ -1323,6 +1337,17 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    setSelectedPostIds((current) => {
+      const validPendingIds = new Set(entryRows
+        .filter((row) => normalizeJournalStatus(row.status) === 'Pending')
+        .map((row) => Number(row.journalEntryId || 0))
+        .filter((id) => id > 0));
+      const next = new Set([...current].filter((id) => validPendingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [entryRows]);
 
   const handleSort = (columnKey) => {
     setSortConfig((current) => ({
@@ -1386,6 +1411,112 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     onOpenEntry?.(row.raw || row);
   };
 
+  const togglePostSelection = (row) => {
+    const journalEntryId = Number(row.journalEntryId || 0);
+
+    if (!journalEntryId || normalizeJournalStatus(row.status) !== 'Pending') {
+      return;
+    }
+
+    setBulkPostMessage('');
+    setBulkPostError('');
+    setSelectedPostIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(journalEntryId)) {
+        next.delete(journalEntryId);
+      } else {
+        next.add(journalEntryId);
+      }
+
+      return next;
+    });
+  };
+
+  const togglePendingPageSelection = () => {
+    setBulkPostMessage('');
+    setBulkPostError('');
+    setSelectedPostIds((current) => {
+      const next = new Set(current);
+
+      if (areAllPendingPagedRowsSelected) {
+        pendingPagedRows.forEach((row) => next.delete(Number(row.journalEntryId)));
+      } else {
+        pendingPagedRows.forEach((row) => next.add(Number(row.journalEntryId)));
+      }
+
+      return next;
+    });
+  };
+
+  const executeBulkPostSelected = async () => {
+    setBulkPostMessage('');
+    setBulkPostError('');
+    setShowBulkPostConfirm(false);
+
+    if (!permissions.canPost) {
+      setBulkPostError('Post permission is required.');
+      return;
+    }
+
+    const idsToPost = [...selectedPostIds];
+
+    if (idsToPost.length === 0) {
+      setBulkPostError('Select at least one pending journal entry.');
+      return;
+    }
+
+    setIsBulkPosting(true);
+
+    try {
+      const token = getToken();
+
+      for (const journalEntryId of idsToPost) {
+        const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${journalEntryId}/post`), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.message || `Unable to post journal entry ${journalEntryId}.`);
+        }
+      }
+
+      setEntryRows((current) => current.map((row) => (
+        selectedPostIds.has(Number(row.journalEntryId || 0))
+          ? { ...row, status: 'Posted', raw: { ...(row.raw || {}), status: 1, statusLabel: 'Posted' } }
+          : row
+      )));
+      setSelectedPostIds(new Set());
+      setBulkPostMessage(`${idsToPost.length} journal entr${idsToPost.length === 1 ? 'y' : 'ies'} posted successfully.`);
+    } catch (error) {
+      setBulkPostError(error.message || 'Unable to post selected journal entries.');
+    } finally {
+      setIsBulkPosting(false);
+    }
+  };
+
+  const handleBulkPostSelected = () => {
+    setBulkPostMessage('');
+    setBulkPostError('');
+
+    if (!permissions.canPost) {
+      setBulkPostError('Post permission is required.');
+      return;
+    }
+
+    if (selectedPostIds.size === 0) {
+      setBulkPostError('Select at least one pending journal entry.');
+      return;
+    }
+
+    setShowBulkPostConfirm(true);
+  };
+
   useEffect(() => () => {
     if (rowClickTimerRef.current) {
       window.clearTimeout(rowClickTimerRef.current);
@@ -1415,6 +1546,8 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
       </div>
 
       {loadError ? <div className="etr-journal-action-message is-error">{loadError}</div> : null}
+      {bulkPostError ? <div className="etr-journal-action-message is-error">{bulkPostError}</div> : null}
+      {bulkPostMessage ? <div className="etr-journal-action-message">{bulkPostMessage}</div> : null}
 
       <section className="etr-journal-panel etr-journal-manager-panel">
         <div className="etr-journal-panel-head">
@@ -1432,12 +1565,32 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
               disabled={!permissions.canSearch}
             />
           </label>
+          <div className="etr-journal-bulk-post-actions">
+            <span>{selectedPostCount} selected</span>
+            <button
+              type="button"
+              onClick={handleBulkPostSelected}
+              disabled={isBulkPosting || selectedPostCount === 0 || !permissions.canPost}
+              title={!permissions.canPost ? 'Post permission is required' : undefined}
+            >
+              {isBulkPosting ? 'Posting...' : 'Post Selected'}
+            </button>
+          </div>
         </div>
 
         <div className="etr-journal-table-wrap">
           <table className="etr-journal-table">
             <thead>
               <tr>
+                <th className="etr-journal-select-column">
+                  <input
+                    type="checkbox"
+                    checked={areAllPendingPagedRowsSelected}
+                    onChange={togglePendingPageSelection}
+                    disabled={pendingPagedRows.length === 0 || isBulkPosting}
+                    aria-label="Select pending journal entries on this page"
+                  />
+                </th>
                 {managerColumns.map((column) => (
                   <th
                     key={column.key}
@@ -1458,7 +1611,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
             <tbody>
               {sortedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={managerColumns.length}>No journal entries found.</td>
+                  <td colSpan={managerColumns.length + 1}>No journal entries found.</td>
                 </tr>
               ) : null}
 
@@ -1470,6 +1623,15 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
                   onDoubleClick={() => handleRowDoubleClick(row)}
                   title="Click to show details; double-click to open journal entry"
                 >
+                  <td className="etr-journal-select-column" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPostIds.has(Number(row.journalEntryId || 0))}
+                      onChange={() => togglePostSelection(row)}
+                      disabled={normalizeJournalStatus(row.status) !== 'Pending' || isBulkPosting}
+                      aria-label={`Select journal entry ${row.entryNumber || row.journalEntryId}`}
+                    />
+                  </td>
                   {managerColumns.map((column) => (
                     <td key={column.key} className={column.numeric ? 'is-number' : ''}>
                       {column.key === 'status' ? (
@@ -1557,6 +1719,14 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           </div>
         </div>
       </section>
+      {showBulkPostConfirm ? (
+        <PostJournalEntryConfirmDialog
+          isSubmitting={isBulkPosting}
+          message={`Are you sure you want to post ${selectedPostCount} selected journal entr${selectedPostCount === 1 ? 'y' : 'ies'}?`}
+          onConfirm={executeBulkPostSelected}
+          onCancel={() => setShowBulkPostConfirm(false)}
+        />
+      ) : null}
     </div>
   );
 }
