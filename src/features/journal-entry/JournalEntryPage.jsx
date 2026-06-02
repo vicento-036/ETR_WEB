@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getToken } from '../../services/authStorage';
 import { clearJournalDraftStorage } from '../../services/journalDraftStorage';
 import EmptyDropdown from '../../components/shared/EmptyDropdown.jsx';
@@ -1576,11 +1576,16 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
             <span>{selectedPostCount} selected</span>
             <button
               type="button"
-              className="is-secondary"
+              className="is-secondary is-icon-only"
               onClick={refreshJournalRows}
               disabled={isLoading || isBulkPosting}
+              aria-label="Refresh journal entries"
+              title="Refresh journal entries"
             >
-              Refresh
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4" />
+                <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" />
+              </svg>
             </button>
             <button
               type="button"
