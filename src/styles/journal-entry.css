@@ -232,6 +232,11 @@
   padding: 0 14px;
 }
 
+.etr-journal-bulk-post-actions button.is-secondary {
+  background: #ffffff;
+  color: #174b7f;
+}
+
 .etr-journal-bulk-post-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.48;

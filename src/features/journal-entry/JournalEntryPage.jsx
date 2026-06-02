@@ -1234,55 +1234,62 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
+  const loadJournalRows = useCallback(async (signal) => {
     const token = getToken();
-    const controller = new AbortController();
+    setIsLoading(true);
+    setLoadError('');
 
-    const loadRows = async () => {
-      setIsLoading(true);
-      setLoadError('');
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [journalResponse, bookResponse, employeeResponse] = await Promise.all([
+        fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal }),
+        fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal }),
+        fetch(buildApiUrl(EMPLOYEES_ENDPOINT), { headers, signal }),
+      ]);
+      const journalData = await journalResponse.json().catch(() => ({}));
+      const bookData = await bookResponse.json().catch(() => ({}));
+      const employeeData = await employeeResponse.json().catch(() => ({}));
 
-      try {
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const [journalResponse, bookResponse, employeeResponse] = await Promise.all([
-          fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal: controller.signal }),
-          fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
-          fetch(buildApiUrl(EMPLOYEES_ENDPOINT), { headers, signal: controller.signal }),
-        ]);
-        const journalData = await journalResponse.json().catch(() => ({}));
-        const bookData = await bookResponse.json().catch(() => ({}));
-        const employeeData = await employeeResponse.json().catch(() => ({}));
-
-        if (!journalResponse.ok) {
-          throw new Error(journalData?.message || 'Unable to load journal entries.');
-        }
-
-        if (!bookResponse.ok) {
-          throw new Error(bookData?.message || 'Unable to load journal books.');
-        }
-
-        const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
-        const nextEmployeeRows = employeeResponse.ok
-          ? getApiCollection(employeeData).map(normalizeEmployeeLookup).filter(Boolean)
-          : [];
-        setBookRows(nextBookRows);
-        setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows, nextEmployeeRows)));
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          setLoadError(error.message || 'Unable to load journal entries.');
-          setEntryRows([]);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
+      if (!journalResponse.ok) {
+        throw new Error(journalData?.message || 'Unable to load journal entries.');
       }
-    };
 
-    loadRows();
+      if (!bookResponse.ok) {
+        throw new Error(bookData?.message || 'Unable to load journal books.');
+      }
+
+      const nextBookRows = getApiCollection(bookData).map(normalizeBook).filter(Boolean);
+      const nextEmployeeRows = employeeResponse.ok
+        ? getApiCollection(employeeData).map(normalizeEmployeeLookup).filter(Boolean)
+        : [];
+      setBookRows(nextBookRows);
+      setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows, nextEmployeeRows)));
+      setSelectedPostIds(new Set());
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setLoadError(error.message || 'Unable to load journal entries.');
+        setEntryRows([]);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadJournalRows(controller.signal);
 
     return () => controller.abort();
-  }, []);
+  }, [loadJournalRows]);
+
+  const refreshJournalRows = () => {
+    setBulkPostMessage('');
+    setBulkPostError('');
+    const controller = new AbortController();
+    loadJournalRows(controller.signal);
+  };
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1567,6 +1574,14 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           </label>
           <div className="etr-journal-bulk-post-actions">
             <span>{selectedPostCount} selected</span>
+            <button
+              type="button"
+              className="is-secondary"
+              onClick={refreshJournalRows}
+              disabled={isLoading || isBulkPosting}
+            >
+              Refresh
+            </button>
             <button
               type="button"
               onClick={handleBulkPostSelected}
