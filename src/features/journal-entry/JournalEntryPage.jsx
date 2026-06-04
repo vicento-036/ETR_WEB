@@ -41,6 +41,7 @@ function createBlankJournalLine(id = Date.now()) {
     selected: false,
     accountTitleId: '',
     costUnitId: '',
+    costCenterId: '',
     accountCode: '',
     accountTitle: '',
     subsidiary: '',
@@ -80,6 +81,9 @@ function createDefaultJournalHeader() {
     referenceType: '',
     referenceNo: '',
     company: '',
+    companyId: '',
+    companyAddress: '',
+    companyTinNumber: '',
     cancellationRemarks: '',
     remarks: '',
   };
@@ -403,9 +407,11 @@ function normalizeBook(row) {
 }
 
 function normalizeCompany(row) {
-  const companyId = getField(row, ['companyId', 'CompanyID', 'CompanyId', 'id', 'Id']);
+  const companyId = getField(row, ['companyKey', 'CompanyKey', 'companyId', 'CompanyID', 'CompanyId', 'id', 'Id']);
   const code = getField(row, ['code', 'Code', 'companyCode', 'CompanyCode']);
   const description = getField(row, ['description', 'Description', 'name', 'Name', 'companyName', 'CompanyName']);
+  const address = getField(row, ['address', 'Address', 'companyAddress', 'CompanyAddress']);
+  const tinNumber = getField(row, ['tinNumber', 'TinNumber', 'TINNumber', 'tinnumber', 'tinNo', 'TinNo', 'TIN', 'tin']);
 
   if (!companyId && !description) {
     return null;
@@ -415,6 +421,8 @@ function normalizeCompany(row) {
     companyId: companyId || description,
     code,
     description,
+    address,
+    tinNumber,
     display: description ? (code ? `${code} - ${description}` : description) : code,
   };
 }
@@ -552,10 +560,10 @@ function findCompany(rows, value) {
   }
 
   return rows.find((row) => (
-    row.companyId === value
-    || row.code.toLowerCase() === normalizedValue
-    || row.description.toLowerCase() === normalizedValue
-    || row.display.toLowerCase() === normalizedValue
+    String(row.companyId || '').trim().toLowerCase() === normalizedValue
+    || String(row.code || '').trim().toLowerCase() === normalizedValue
+    || String(row.description || '').trim().toLowerCase() === normalizedValue
+    || String(row.display || '').trim().toLowerCase() === normalizedValue
   )) || null;
 }
 
@@ -953,6 +961,145 @@ function formatDisplayDate(value) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatPrintDateTime(value = new Date()) {
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const formatted = date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+  return formatted.replace(',', '').replace('AM', 'am').replace('PM', 'pm');
+}
+
+function formatMetaDate(value) {
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function formatMoney4Decimal(value) {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
+function normalizeCompanyAddressText(value) {
+  return String(value || '')
+    .replace(/Para(?:a|\u00f1|\u00c3\u00b1|\u00e6)?aque/g, 'Para\u00f1aque')
+    .replace(/Par(?:a|\u00e6)aque/g, 'Para\u00f1aque')
+    .replace(/PARA(?:A|\u00d1|\u00c3\u00b1|\u00c6)?AQUE/g, 'PARA\u00d1AQUE')
+    .replace(/PAR(?:A|\u00c6)AQUE/g, 'PARA\u00d1AQUE');
+}
+
+function pdfVLine(page, x, y1, y2, lw = 0.5) {
+  page.push(`q 0.72 G ${lw} w ${x.toFixed(2)} ${y1.toFixed(2)} m ${x.toFixed(2)} ${y2.toFixed(2)} l S Q`);
+}
+
+function wrapText(text, size, maxWidth) {
+  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const lines = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const prefix = currentLine ? ' ' : '';
+    const testLine = `${currentLine}${prefix}${word}`;
+
+    if (estimatePdfWidth(testLine, size) <= maxWidth) {
+      currentLine = testLine;
+      continue;
+    }
+
+    for (const ch of `${prefix}${word}`) {
+      const testCharLine = `${currentLine}${ch}`;
+      if (estimatePdfWidth(testCharLine, size) > maxWidth) {
+        if (currentLine) {
+          lines.push(currentLine.trimEnd());
+        }
+        currentLine = ch === ' ' ? '' : ch;
+      } else {
+        currentLine = testCharLine;
+      }
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines.length ? lines : [''];
+}
+
+function chunkText(text, chunkSize) {
+  const value = String(text || '');
+  const chunks = [];
+  for (let index = 0; index < value.length; index += chunkSize) {
+    chunks.push(value.slice(index, index + chunkSize));
+  }
+  return chunks.length ? chunks : [''];
+}
+
+function truncateText(text, size, maxWidth) {
+  const str = String(text || '');
+  if (estimatePdfWidth(str, size) <= maxWidth) {
+    return str;
+  }
+  let temp = '';
+  for (const ch of str) {
+    if (estimatePdfWidth(temp + ch + '...', size) > maxWidth) {
+      return temp + '...';
+    }
+    temp += ch;
+  }
+  return temp + '...';
+}
+
+function drawWrappedPdfText(page, text, x, y, size, maxWidth, maxLines, options = {}) {
+  const lines = wrapText(text, size, maxWidth).slice(0, maxLines);
+
+  if (lines.length === maxLines) {
+    const allLines = wrapText(text, size, maxWidth);
+    if (allLines.length > maxLines) {
+      lines[maxLines - 1] = truncateText(lines[maxLines - 1], size, maxWidth);
+    }
+  }
+
+  lines.forEach((lineText, index) => {
+    const textOptions = { ...options };
+    if (options.clip !== false) {
+      textOptions.clipWidth = maxWidth;
+    }
+    delete textOptions.clip;
+    pdfTxt(page, lineText, x, y - index * 9, size, textOptions);
+  });
+
+  return lines.length;
+}
+
 function normalizeDateTextToIso(value) {
   const text = String(value || '').trim();
 
@@ -1093,88 +1240,265 @@ function validateJournalEntry(header, lines, { requireBalanced = false } = {}) {
   return errors;
 }
 
-function printJournalVoucher({ header, lines, totals, auditTrail, auditUserName }) {
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+// ─── Raw PDF helpers (same technique as the reimbursement report) ─────────────
 
-  if (!printWindow) {
-    throw new Error('Pop-up blocked. Allow pop-ups to print the voucher.');
-  }
-
-  const lineRows = lines
-    .filter((line) => line.accountCode || line.accountTitle)
-    .map((line) => `
-      <tr>
-        <td>${line.accountCode || '-'}</td>
-        <td>${line.accountTitle || '-'}</td>
-        <td>${line.subsidiary || '-'}</td>
-        <td>${line.costCenter || '-'}</td>
-        <td class="num">${line.debit ? formatMoney(parseAmount(line.debit)) : ''}</td>
-        <td class="num">${line.credit ? formatMoney(parseAmount(line.credit)) : ''}</td>
-        <td>${line.remarks || ''}</td>
-      </tr>
-    `)
-    .join('');
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Journal Voucher ${header.transactionNo || 'Draft'}</title>
-    <style>
-      body { font-family: Arial, sans-serif; color: #12314e; margin: 24px; }
-      h1 { margin: 0 0 6px; font-size: 20px; }
-      .meta { margin-bottom: 18px; font-size: 12px; line-height: 1.6; }
-      table { width: 100%; border-collapse: collapse; font-size: 12px; }
-      th, td { border: 1px solid #b7c9dc; padding: 8px; text-align: left; }
-      th { background: #eaf4fd; text-transform: uppercase; font-size: 11px; }
-      .num { text-align: right; }
-      .totals { margin-top: 14px; display: grid; gap: 6px; max-width: 280px; margin-left: auto; }
-      .totals div { display: flex; justify-content: space-between; font-weight: 700; }
-    </style>
-  </head>
-  <body>
-    <h1>Journal Voucher</h1>
-    <div class="meta">
-      <div><strong>Transaction No.:</strong> ${header.transactionNo || 'Draft'}</div>
-      <div><strong>Date:</strong> ${formatDisplayDate(header.transactionDate)}</div>
-      <div><strong>Ledger Book:</strong> ${header.ledgerBook}</div>
-      <div><strong>Reference:</strong> ${header.referenceType} / ${header.referenceNo}</div>
-      <div><strong>Company:</strong> ${header.company}</div>
-      <div><strong>Status:</strong> ${header.status}</div>
-      <div><strong>Prepared by:</strong> ${auditUserName}</div>
-      <div><strong>Posted by:</strong> ${auditTrail.postedCancelled?.name || '-'}</div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Account Code</th>
-          <th>Account Title</th>
-          <th>Subsidiary</th>
-          <th>Cost Center</th>
-          <th>Debit</th>
-          <th>Credit</th>
-          <th>Remarks</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${lineRows || '<tr><td colspan="7">No journal lines</td></tr>'}
-      </tbody>
-    </table>
-    <div class="totals">
-      <div><span>Debit Total</span><span>${formatMoney(totals.debit)}</span></div>
-      <div><span>Credit Total</span><span>${formatMoney(totals.credit)}</span></div>
-      <div><span>Variance</span><span>${formatMoney(totals.variance)}</span></div>
-    </div>
-    <p style="margin-top:18px;font-size:12px;">${header.remarks || ''}</p>
-  </body>
-</html>`;
-
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+function escapePdfStr(value) {
+  return String(value ?? '').split('').map((ch) => {
+    const code = ch.charCodeAt(0);
+    if (ch === '\\') return '\\\\';
+    if (ch === '(') return '\\(';
+    if (ch === ')') return '\\)';
+    if (code >= 0x20 && code <= 0x7e) return ch;
+    if (code >= 0xa0 && code <= 0xff) {
+      return `\\${code.toString(8).padStart(3, '0')}`;
+    }
+    return '';
+  }).join('');
 }
 
+function estimatePdfWidth(text, size) {
+  return String(text || '').split('').reduce((sum, ch) => {
+    if ('MW'.includes(ch)) return sum + size * 0.82;
+    if ('IJ'.includes(ch) || 'ijltfr.,;:|!\''.includes(ch)) return sum + size * 0.34;
+    if (' -/\\()[]{}'.includes(ch)) return sum + size * 0.32;
+    if (/[A-Z]/.test(ch)) return sum + size * 0.62;
+    if (/[0-9]/.test(ch)) return sum + size * 0.56;
+    return sum + size * 0.5;
+  }, 0);
+}
+
+function pdfTxt(page, text, x, y, size, options = {}) {
+  const safe = escapePdfStr(text);
+  const font = options.font || 'F1';
+  const gray = options.gray ?? 0;
+  const align = options.align || 'left';
+  const width = options.width || 0;
+  const ew = estimatePdfWidth(safe, size);
+  const tx = align === 'right' ? x + width - ew : align === 'center' ? x + (width - ew) / 2 : x;
+  const clip = options.clipWidth
+    ? `${x.toFixed(2)} ${(y - size * 0.35).toFixed(2)} ${options.clipWidth.toFixed(2)} ${(size * 1.35).toFixed(2)} re W n `
+    : '';
+  page.push(`q ${clip}${gray} g BT /${font} ${size} Tf ${tx.toFixed(2)} ${y.toFixed(2)} Td (${safe}) Tj ET Q`);
+}
+
+function pdfFill(page, x, y, w, h, gray) {
+  page.push(`q ${gray} g ${x.toFixed(2)} ${y.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f Q`);
+}
+
+function pdfBorder(page, x, y, w, h, lw = 0.4) {
+  page.push(`q 0.72 G ${lw} w ${x.toFixed(2)} ${y.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re S Q`);
+}
+
+function pdfHLine(page, x1, y, x2, lw = 0.5) {
+  page.push(`q 0.72 G ${lw} w ${x1.toFixed(2)} ${y.toFixed(2)} m ${x2.toFixed(2)} ${y.toFixed(2)} l S Q`);
+}
+
+function buildJournalVoucherPdfBlob({ header, lines, totals }) {
+  const PAGE_W = 612;  // letter portrait
+  const PAGE_H = 792;
+  const M = 25;        // outer margin for border box
+  const PW = PAGE_W - M * 2; // 562
+  const PH = PAGE_H - M * 2; // 742
+
+  const company   = String(header.company || header.companyName || 'MASIGASIG TRANSPORT AND LOGISTICS SOLUTIONS, INC.').toUpperCase();
+  const address   = normalizeCompanyAddressText(header.companyAddress);
+  const tin       = String(header.companyTinNumber || '');
+  const refNo     = String(header.referenceNo || '-');
+  const entryNo   = String(header.transactionNo || 'DRAFT').toUpperCase();
+  const entryDate = formatMetaDate(header.transactionDate);
+  const note      = String(header.remarks || '');
+  const printed   = formatPrintDateTime();
+
+  const activeLines = lines.filter((l) => l.accountCode || l.accountTitle || parseAmount(l.debit) > 0 || parseAmount(l.credit) > 0);
+
+  // Sorting logic: Debit lines first
+  const sortedLines = [...activeLines].sort((a, b) => {
+    const aDebit = parseAmount(a.debit) > 0;
+    const bDebit = parseAmount(b.debit) > 0;
+    if (aDebit && !bDebit) return -1;
+    if (!aDebit && bDebit) return 1;
+    return 0;
+  });
+
+  const stream = ['0.45 w', '0.45 G', '0 g'];
+
+  // Define exact vertical layout coordinates (adjusted for larger address/TIN fonts)
+  const companyY = 750;
+  const addressY = 732;
+  const tinY     = 718;
+  const titleY   = 690;
+  const metaY    = 666;
+  const tblTop   = 604;
+  const tblY     = 90;
+  const tblW     = PW - 20;
+  const tblH     = tblTop - tblY; // 540
+  const tblX     = M + 10;
+
+  // 1. Company Header (left-aligned, Arial 12 Bold -> F2 size 12)
+  pdfTxt(stream, company, M + 10, companyY, 12, { font: 'F2', gray: 0.1 });
+  
+  // Printed Date (right-aligned, Tahoma 6 Bold -> F2 size 6)
+  pdfTxt(stream, `Printed Date : ${printed}`, M + PW - 230, companyY, 6, { font: 'F2', gray: 0.2, align: 'right', width: 220 });
+
+  // Company Address and TIN (Arial 10 Regular -> F1 size 10)
+  if (address) {
+    pdfTxt(stream, address, M + 10, addressY, 10, { gray: 0.15 });
+  }
+  if (tin) {
+    pdfTxt(stream, `TIN #: ${tin}`, M + 10, tinY, 10, { gray: 0.15 });
+  }
+
+  // 2. Document Title (left-aligned, Tahoma 13 Bold -> F2 size 13)
+  pdfTxt(stream, 'JOURNAL VOUCHER', M + 10, titleY, 13, { font: 'F2', gray: 0.08 });
+
+  // 3. Notes & Meta Block
+  pdfTxt(stream, 'Notes', M + 10, metaY, 9, { font: 'F2', gray: 0.1 });
+  const noteX = M + 58;
+  const labelX = M + PW - 150;
+  const valueX = labelX + 86;
+  const noteMaxWidth = 230;
+  const valueMaxWidth = 80;
+  const referenceLines = chunkText(refNo, 10).slice(0, 3);
+  drawWrappedPdfText(stream, note, noteX, metaY, 8, noteMaxWidth, 3, { gray: 0.15, clip: false });
+
+  // Right: Metadata Block - fixed column so long references cannot overlap notes.
+  pdfTxt(stream, 'Reference No.:', labelX, metaY, 9, { font: 'F2', gray: 0.1 });
+  referenceLines.forEach((lineText, index) => {
+    pdfTxt(stream, lineText, valueX, metaY - index * 9, 8, { gray: 0.2, clipWidth: valueMaxWidth });
+  });
+  const referenceLineCount = referenceLines.length;
+  const entryY = metaY - Math.max(10, referenceLineCount * 9);
+  pdfTxt(stream, 'Entry No.:', labelX, entryY, 9, { font: 'F2', gray: 0.1 });
+  const entryLineCount = drawWrappedPdfText(stream, entryNo, valueX, entryY, 8, valueMaxWidth, 2, { gray: 0.2 });
+  const dateY = entryY - Math.max(10, entryLineCount * 9);
+  pdfTxt(stream, 'Date:', labelX, dateY, 9, { font: 'F2', gray: 0.1 });
+  drawWrappedPdfText(stream, entryDate, valueX, dateY, 8, valueMaxWidth, Math.max(1, 2 - entryLineCount), { gray: 0.2 });
+  // Draw the outer table box
+  pdfBorder(stream, tblX, tblY, tblW, tblH, 0.5);
+
+  // Column configuration
+  const codeW = 85;
+  const titleW = 317;
+  const amtW = 70;
+  const COLS = [tblX, tblX + codeW, tblX + codeW + titleW, tblX + codeW + titleW + amtW];
+  const WIDTHS = [codeW, titleW, amtW, amtW];
+
+  // Draw continuous vertical column lines from bottom to top of table
+  pdfVLine(stream, COLS[1], tblY, tblTop, 0.5);
+  pdfVLine(stream, COLS[2], tblY, tblTop, 0.5);
+  pdfVLine(stream, COLS[3], tblY, tblTop, 0.5);
+
+  // Draw table header row background
+  const hdrH = 18;
+  pdfFill(stream, tblX, tblTop - hdrH, tblW, hdrH, 0.96);
+  pdfHLine(stream, tblX, tblTop - hdrH, tblX + tblW, 0.5);
+
+  // Draw header labels (Tahoma 8 Bold -> F2 size 8)
+  pdfTxt(stream, 'Account Code', COLS[0], tblTop - 12, 8, { font: 'F2', gray: 0.1, align: 'center', width: codeW });
+  pdfTxt(stream, 'Account Title', COLS[1], tblTop - 12, 8, { font: 'F2', gray: 0.1, align: 'center', width: titleW });
+  pdfTxt(stream, 'Debit', COLS[2], tblTop - 12, 8, { font: 'F2', gray: 0.1, align: 'center', width: amtW });
+  pdfTxt(stream, 'Credit', COLS[3], tblTop - 12, 8, { font: 'F2', gray: 0.1, align: 'center', width: amtW });
+
+  // Print data rows (Tahoma 8 Regular -> F1 size 8)
+  let currentY = tblTop - hdrH;
+  const rowH = 15;
+
+  sortedLines.forEach((line) => {
+    const debit = parseAmount(line.debit);
+    const credit = parseAmount(line.credit);
+    
+    // Format Account Title with Subsidiary
+    let titleText = String(line.accountTitle || '-');
+    if (line.subsidiary) {
+      let subText = String(line.subsidiary);
+      const match = subText.match(/^[A-Za-z0-9\-_]+\s*-\s*(.+)$/);
+      if (match) {
+        subText = match[1];
+      }
+      titleText += ` - ${subText}`;
+    }
+
+    // Accounting Convention: Indent Credit account codes and titles (where credit > 0) to the right
+    const indent = credit > 0 ? 15 : 4;
+    const codeX = COLS[0] + indent;
+    const titleX = COLS[1] + indent;
+
+    pdfTxt(stream, String(line.accountCode || '-'), codeX, currentY - 11, 8, { gray: 0.1 });
+    pdfTxt(stream, titleText, titleX, currentY - 11, 8, { gray: 0.1 });
+    if (debit > 0) {
+      pdfTxt(stream, formatMoney4Decimal(debit), COLS[2] + 4, currentY - 11, 8, { gray: 0.08, align: 'right', width: amtW - 8 });
+    }
+    if (credit > 0) {
+      pdfTxt(stream, formatMoney4Decimal(credit), COLS[3] + 4, currentY - 11, 8, { gray: 0.08, align: 'right', width: amtW - 8 });
+    }
+    currentY -= rowH;
+  });
+
+  // Print Totals Row (Tahoma 8 Bold -> F2 size 8)
+  // Draw horizontal line above total values (Debit and Credit columns only)
+  pdfHLine(stream, COLS[2], currentY, tblX + tblW, 0.5);
+
+  pdfTxt(stream, 'TOTAL >>', COLS[1] - 4, currentY - 11, 8, { font: 'F2', gray: 0.1, align: 'right', width: titleW });
+  pdfTxt(stream, formatMoney4Decimal(totals.debit), COLS[2] + 4, currentY - 11, 8, { font: 'F2', gray: 0.05, align: 'right', width: amtW - 8 });
+  pdfTxt(stream, formatMoney4Decimal(totals.credit), COLS[3] + 4, currentY - 11, 8, { font: 'F2', gray: 0.05, align: 'right', width: amtW - 8 });
+
+  // Draw double horizontal lines below total values (Debit and Credit columns only)
+  const doubleY1 = currentY - rowH;
+  const doubleY2 = doubleY1 - 2;
+  pdfHLine(stream, COLS[2], doubleY1, tblX + tblW, 0.5);
+  pdfHLine(stream, COLS[2], doubleY2, tblX + tblW, 0.5);
+
+  // 5. Signature Section (Tahoma 8 Regular -> F1 size 8)
+  const sigLineY = 50;
+  const sigLabelY = 38;
+  const sigColW = tblW / 4; // 135.5
+  const sigLabels = ['Prepared By:', 'Checked By:', 'Approved By:', 'Received By:'];
+
+  sigLabels.forEach((label, i) => {
+    const sx = tblX + i * sigColW;
+    const lineStart = sx + 10;
+    const lineEnd = sx + sigColW - 10;
+
+    // Draw signature line
+    pdfHLine(stream, lineStart, sigLineY, lineEnd, 0.5);
+    // Draw signature label (centered)
+    pdfTxt(stream, label, sx, sigLabelY, 8, { gray: 0.1, align: 'center', width: sigColW });
+  });
+
+  // build the binary PDF
+  const contentStr = stream.join('\n');
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>'];
+  objects.push(`<< /Type /Pages /Kids [3 0 R] /Count 1 >>`);
+  objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`);
+  objects.push(`<< /Length ${contentStr.length} >>\nstream\n${contentStr}\nendstream`);
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((obj, i) => {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((o) => { pdf += `${String(o).padStart(10, '0')} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+function downloadVoucherPdf(blob, entryNo) {
+  const filename = `JournalVoucher-${entryNo || 'draft'}.pdf`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 function JournalMetric({ label, value, tone = '' }) {
   return (
     <div className={`etr-journal-metric ${tone}`}>
@@ -1815,19 +2139,30 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
         const rawRemarks = String(detail?.remarks || '');
         const parts = rawRemarks.split(' | ');
+        let costCenterId = String(detail?.costCenterID ?? detail?.costCenterId ?? detail?.CostCenterID ?? detail?.CostCenterId ?? '');
         let costCenter = '';
         let detailRemarks = rawRemarks;
+
+        const matchedAreaClassification = findClassification(nextClassificationRows, costCenterId);
+        if (matchedAreaClassification) {
+          costCenterId = matchedAreaClassification.classificationId;
+          costCenter = matchedAreaClassification.display;
+        } else if (costCenterId === '-1') {
+          costCenterId = '';
+        }
 
         if (parts.length > 1) {
           const firstPart = parts[0];
           const matchedClassification = findClassification(nextClassificationRows, firstPart);
           if (matchedClassification) {
+            costCenterId = matchedClassification.classificationId;
             costCenter = matchedClassification.display;
             detailRemarks = parts.slice(1).join(' | ');
           }
         } else if (parts.length === 1 && parts[0]) {
           const matchedClassification = findClassification(nextClassificationRows, parts[0]);
           if (matchedClassification) {
+            costCenterId = matchedClassification.classificationId;
             costCenter = matchedClassification.display;
             detailRemarks = '';
           }
@@ -1839,6 +2174,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           selected: false,
           accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
           costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
+          costCenterId,
           accountCode: accountTitle?.code || '',
           accountTitle: accountTitle?.description || '',
           subsidiary: costUnit?.display || '',
@@ -1861,6 +2197,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
       referenceType: getJournalEntryReferenceTypeLabel(data, current.referenceType),
       referenceNo: String(data?.referenceNo || ''),
       cancellationRemarks: String(data?.cancellationReason ?? data?.CancellationReason ?? data?.cancellationRemarks ?? data?.CancellationRemarks ?? current.cancellationRemarks ?? ''),
+      company: getField(data, ['companyName', 'CompanyName']) || current.company,
+      companyAddress: getField(data, ['address', 'Address', 'companyAddress', 'CompanyAddress']) || current.companyAddress,
+      companyTinNumber: getField(data, ['tinNumber', 'TinNumber', 'tinnumber', 'TINNumber', 'TIN']) || current.companyTinNumber,
       remarks: String(data?.remarks || ''),
     }));
     setLines(nextLines);
@@ -2023,6 +2362,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
           if (!current.company && nextCompanyRows.length > 0) {
             nextHeader.company = nextCompanyRows[0].description || nextCompanyRows[0].display || '';
+            nextHeader.companyId = String(nextCompanyRows[0].companyId || '');
+            nextHeader.companyAddress = nextCompanyRows[0].address || '';
+            nextHeader.companyTinNumber = nextCompanyRows[0].tinNumber || '';
           }
 
           return nextHeader;
@@ -2164,6 +2506,9 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         return {
           ...current,
           company: selectedCompany?.description || value,
+          companyId: String(selectedCompany?.companyId || ''),
+          companyAddress: selectedCompany?.address || '',
+          companyTinNumber: selectedCompany?.tinNumber || '',
         };
       }
 
@@ -2208,11 +2553,14 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           }
         }
 
-        if (field === 'costCenter') {
-          const resolvedClassification = findClassification(classificationRows, nextLine[field]);
+        if (field === 'costCenter' || field === 'costCenterId') {
+          const resolvedClassification = findClassification(classificationRows, field === 'costCenterId' ? value : nextLine[field]);
 
           if (resolvedClassification) {
+            nextLine.costCenterId = resolvedClassification.classificationId;
             nextLine.costCenter = resolvedClassification.display;
+          } else if (field === 'costCenter') {
+            nextLine.costCenterId = '';
           }
         }
 
@@ -2284,8 +2632,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           hierarchy: row.hierarchy,
           primary: row.code || row.display,
           secondary: row.description || row.hierarchy || row.display,
-          selectField: 'costCenter',
-          selectValue: row.display,
+          selectField: 'costCenterId',
+          selectValue: row.classificationId,
         })),
       };
     }
@@ -2361,6 +2709,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
         ReferenceNo: header.referenceNo.trim(),
         EntryDate: header.transactionDate,
         BookID: Number(header.bookId),
+        CompanyID: header.companyId ? Number(header.companyId) : null,
+        CostCenterID: activeLines.find((line) => line.costCenterId)?.costCenterId
+          ? Number(activeLines.find((line) => line.costCenterId).costCenterId)
+          : null,
         Remarks: header.remarks.trim(),
         Details: activeLines.map((line) => ({
           ...(line.journalDetailId ? { JournalEntryDetailID: Number(line.journalDetailId) } : {}),
@@ -2368,7 +2720,8 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           Debit: parseAmount(line.debit),
           Credit: parseAmount(line.credit),
           CostUnitID: line.costUnitId ? Number(line.costUnitId) : null,
-          Remarks: [line.costCenter, line.remarks].filter(Boolean).join(' | ').slice(0, 200),
+          CostCenterID: line.costCenterId ? Number(line.costCenterId) : null,
+          Remarks: String(line.remarks || '').trim().slice(0, 200),
         })),
       },
     };
@@ -2596,32 +2949,93 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
     setShowPostConfirm(true);
   };
 
-  const handlePrintVoucher = () => {
+  const handlePrintVoucher = async () => {
     clearActionFeedback();
 
-    const validationErrors = validateJournalEntry(header, lines);
-
-    if (validationErrors.length > 0) {
-      setActionError(validationErrors.join(' '));
+    if (!isExistingJournalEntry) {
+      setActionError('Save the journal entry before printing.');
       return;
     }
 
+    const activeLines = lines.filter((line) => (
+      String(line.accountCode || '').trim()
+      || String(line.accountTitle || '').trim()
+      || parseAmount(line.debit) > 0
+      || parseAmount(line.credit) > 0
+    ));
+
+    if (!activeJournalEntryId && activeLines.length === 0) {
+      setActionError('Add at least one journal line before printing.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     try {
-      printJournalVoucher({
-        header,
-        lines,
-        totals,
-        auditTrail,
-        auditUserName,
+      let printHeader = header;
+      let printLines = lines;
+      let printTotals = totals;
+
+      if (activeJournalEntryId) {
+        const token = getToken();
+        const response = await fetch(buildApiUrl(`${JOURNAL_ENTRY_ENDPOINT}/${activeJournalEntryId}`), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data) {
+          printHeader = {
+            ...header,
+            status: getField(data, ['statusLabel', 'StatusLabel']) || header.status,
+            transactionNo: String(data?.entryNumber ?? data?.EntryNumber ?? header.transactionNo ?? ''),
+            transactionDate: String(data?.entryDate ?? data?.EntryDate ?? header.transactionDate ?? '').slice(0, 10) || header.transactionDate,
+            referenceNo: String(data?.referenceNo ?? data?.ReferenceNo ?? header.referenceNo ?? ''),
+            company: getField(data, ['companyName', 'CompanyName']) || header.company,
+            companyAddress: getField(data, ['address', 'Address', 'companyAddress', 'CompanyAddress']) || header.companyAddress,
+            companyTinNumber: getField(data, ['tinNumber', 'TinNumber', 'tinnumber', 'TINNumber', 'TIN']) || header.companyTinNumber,
+            remarks: String(data?.remarks ?? data?.Remarks ?? header.remarks ?? ''),
+          };
+
+          if (Array.isArray(data?.details) && data.details.length > 0) {
+            printLines = data.details.map((detail, index) => {
+              const accountTitle = findAccountTitle(accountTitleRows, String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''));
+              const costUnit = findCostUnit(costUnitRows, String(detail?.costUnitID ?? detail?.costUnitId ?? ''));
+
+              return {
+                id: index + 1,
+                accountCode: accountTitle?.code || String(detail?.accountCode ?? detail?.AccountCode ?? detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
+                accountTitle: accountTitle?.description || String(detail?.accountDescription ?? detail?.AccountDescription ?? ((detail?.accountTitleID ?? detail?.accountTitleId) ? 'Account Title ' + (detail?.accountTitleID ?? detail?.accountTitleId) : '')),
+                subsidiary: costUnit?.display || String(detail?.subsidiary ?? detail?.Subsidiary ?? ''),
+                debit: Number(detail?.debit ?? detail?.Debit ?? 0) > 0 ? String(detail?.debit ?? detail?.Debit) : '',
+                credit: Number(detail?.credit ?? detail?.Credit ?? 0) > 0 ? String(detail?.credit ?? detail?.Credit) : '',
+                remarks: String(detail?.remarks ?? detail?.Remarks ?? ''),
+              };
+            });
+            printTotals = {
+              debit: printLines.reduce((sum, line) => sum + parseAmount(line.debit), 0),
+              credit: printLines.reduce((sum, line) => sum + parseAmount(line.credit), 0),
+              variance: 0,
+            };
+            printTotals.variance = printTotals.debit - printTotals.credit;
+          }
+        }
+      }
+
+      const pdfBlob = buildJournalVoucherPdfBlob({
+        header: printHeader,
+        lines: printLines,
+        totals: printTotals,
       });
-      setActionMessage(header.transactionNo
-        ? `Print preview opened for ${header.transactionNo}.`
-        : 'Print preview opened for unsaved draft voucher.');
+      downloadVoucherPdf(pdfBlob, printHeader.transactionNo);
+      setActionMessage(printHeader.transactionNo
+        ? `PDF downloaded for ${printHeader.transactionNo}.`
+        : 'PDF downloaded for unsaved draft voucher.');
     } catch (error) {
       setActionError(error.message || 'Unable to print voucher.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
   const deleteSelected = () => {
     clearActionFeedback();
 
@@ -2679,7 +3093,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             >
               {isSubmitting ? 'Posting...' : 'Post to Ledger'}
             </button>
-            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting}>
               Print Voucher
             </button>
           </>
@@ -2701,7 +3115,12 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
             >
               {isSubmitting ? 'Posting...' : 'Post to Ledger'}
             </button>
-            <button type="button" onClick={handlePrintVoucher} disabled={isSubmitting || !permissions.canPrint}>
+            <button
+              type="button"
+              onClick={handlePrintVoucher}
+              disabled={true}
+              title="Save the journal entry before printing"
+            >
               Print Voucher
             </button>
           </>
@@ -2764,10 +3183,10 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                   </label>
                   <label className="etr-journal-field is-wide">
                     <span>Company</span>
-                    <select value={header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading || isReadOnlyDetail}>
+                    <select value={header.companyId || header.company} onChange={(event) => updateHeader('company', event.target.value)} disabled={isLookupsLoading || isReadOnlyDetail}>
                       <option value="">{isLookupsLoading ? 'Loading companies...' : 'Select company'}</option>
                       {companyRows.map((company) => (
-                        <option key={company.companyId} value={company.description}>
+                        <option key={company.companyId} value={company.companyId}>
                           {company.display}
                         </option>
                       ))}
