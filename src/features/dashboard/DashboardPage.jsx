@@ -5,6 +5,7 @@ import ExpenseEntryView from '../daily-expense/DailyExpensePage.jsx';
 import JournalEntryView, { JournalEntryManagerView } from '../journal-entry/JournalEntryPage.jsx';
 import { clearJournalDraftStorage } from '../../services/journalDraftStorage';
 import WithdrawalEntry from '../withdrawal-entry/WithdrawalEntryPage.jsx';
+import OrderEntry from '../order-entry/OrderEntryPage.jsx';
 import { formatDashboardDocumentTitle } from '../../constants/documentTitle.js';
 
 const DAILY_EXPENSE_ENTRY_DESCRIPTION = '{4DAE27D1-29DC-418F-AF97-CBCD368CF592}';
@@ -632,6 +633,10 @@ function DashboardContent({
 
   if (activeItemId === 'withdrawal-entry') {
     return <WithdrawalEntry />;
+  }
+
+  if (activeItemId === 'order-entry') {
+    return <OrderEntry />;
   }
 
   return (
