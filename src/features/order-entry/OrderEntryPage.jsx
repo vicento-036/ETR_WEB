@@ -2,27 +2,36 @@ import React, { useMemo, useState } from 'react';
 import '../../styles/daily-expense.css';
 import '../../styles/order-entry.css';
 
-const todayIso = new Date().toISOString().slice(0, 10);
+function formatMonthDayYear(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
+}
+
+const todayDisplay = formatMonthDayYear(new Date());
 
 const initialOrder = {
   orderNo: '',
-  orderDate: todayIso,
+  orderDate: todayDisplay,
   status: 'Draft',
-  account: 'MARIA TERESA CHENG',
-  deliveryAddress: 'SM HEAD OFFICE',
+  creditTerms: '',
+  customerPo: '',
+  account: '',
+  deliveryAddress: '',
   remarks: '',
 };
 
 function createOrderItem(overrides = {}) {
   return {
     id: crypto.randomUUID?.() || String(Date.now()),
-    code: 'BOP00002',
-    description: 'LIVER GOLD-F',
-    unit: 'BOX TO BOX',
-    detailPrice: '760',
-    quantity: '1',
-    freeGoods: '1',
-    discountPercent: '0',
+    code: '',
+    description: '',
+    unit: '',
+    detailPrice: '',
+    quantity: '',
+    freeGoods: '',
+    discountPercent: '',
     remarks: '',
     ...overrides,
   };
@@ -135,9 +144,14 @@ export default function OrderEntry() {
                 <input type="text" value={order.orderNo} onChange={(event) => updateOrder('orderNo', event.target.value)} />
               </Field>
               <Field label="Order Date">
-                <input type="date" value={order.orderDate} onChange={(event) => updateOrder('orderDate', event.target.value)} />
+                <input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" value={order.orderDate} onChange={(event) => updateOrder('orderDate', event.target.value)} />
               </Field>
-              
+              <Field label="Credit Terms">
+                <input type="text" value={order.creditTerms} onChange={(event) => updateOrder('creditTerms', event.target.value)} />
+              </Field>
+              <Field label="Customer PO">
+                <input type="text" value={order.customerPo} onChange={(event) => updateOrder('customerPo', event.target.value)} />
+              </Field>
             </div>
           </section>
 
@@ -152,11 +166,11 @@ export default function OrderEntry() {
                   <input type="text" value={order.account} onChange={(event) => updateOrder('account', event.target.value)} />
                 </Field>
                 <Field label="Delivery Address">
-                  <textarea rows="4" value={order.deliveryAddress} onChange={(event) => updateOrder('deliveryAddress', event.target.value)} />
+                  <input type="text" value={order.deliveryAddress} onChange={(event) => updateOrder('deliveryAddress', event.target.value)} />
                 </Field>
               </div>
               <Field label="Remarks" className="etr-expense-description">
-                <textarea rows="4" value={order.remarks} onChange={(event) => updateOrder('remarks', event.target.value)} />
+                <input type="text" value={order.remarks} onChange={(event) => updateOrder('remarks', event.target.value)} />
               </Field>
             </div>
           </section>
