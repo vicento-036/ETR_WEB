@@ -514,7 +514,7 @@ function findCostUnit(rows, value) {
   }
 
   return rows.find((row) => (
-    row.costUnitId === value
+    String(row.costUnitId) === normalizedValue
     || row.code.toLowerCase() === normalizedValue
     || row.description.toLowerCase() === normalizedValue
     || row.display.toLowerCase() === normalizedValue
@@ -655,6 +655,7 @@ function normalizeJournalEntryDetail(row) {
     accountCode: getField(row, ['accountCode', 'AccountCode', 'Account Code']),
     accountDescription: getField(row, ['accountDescription', 'AccountDescription', 'Account Description']),
     businessUnit: getField(row, ['businessUnit', 'BusinessUnit', 'Business Unit']),
+    costCenter: getField(row, ['costCenter', 'CostCenter', 'Cost Center']),
     debit: parseAmount(row?.debit ?? row?.Debit ?? 0),
     credit: parseAmount(row?.credit ?? row?.Credit ?? 0),
     area: area === '-1' ? '' : area,
@@ -813,6 +814,25 @@ function getJournalSortValue(row, column) {
   return String(row[column.key] || '').toLowerCase();
 }
 
+function getSearchRelevance(row, query) {
+  const columns = ['entryNumber', 'referenceNumber', 'book', 'createdBy', 'lastModifiedBy', 'remarks', 'status'];
+  let maxRelevance = 0;
+
+  for (const key of columns) {
+    const value = String(row[key] || '').toLowerCase();
+    if (value === query) {
+      return 3; // exact match
+    }
+    if (value.startsWith(query)) {
+      maxRelevance = Math.max(maxRelevance, 2);
+    } else if (value.includes(query)) {
+      maxRelevance = Math.max(maxRelevance, 1);
+    }
+  }
+
+  return maxRelevance;
+}
+
 function getVisiblePages(currentPage, totalPages) {
   const visibleCount = Math.min(MAX_VISIBLE_PAGE_BUTTONS, totalPages);
   const half = Math.floor(visibleCount / 2);
@@ -856,8 +876,8 @@ function getAuditEmployeeName(user) {
   const firstName = getUserField(user, ['firstName', 'firstname', 'FirstName', 'FIRSTNAME']);
   const middleName = getUserField(user, ['middleName', 'middlename', 'MiddleName', 'MIDDLENAME']);
 
-  if (lastName && firstName) {
-    return [lastName, [firstName, middleName].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  if (firstName && lastName) {
+    return [[firstName, middleName].filter(Boolean).join(' '), lastName].filter(Boolean).join(' ');
   }
 
   return firstName || lastName || getUserField(user, ['username']) || 'Executive Service Account';
@@ -1628,22 +1648,37 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   }, [entryRows, query]);
 
   const sortedRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    const hasQuery = normalizedQuery.length > 0;
+
     const column = managerColumns.find((item) => item.key === sortConfig.key);
 
-    if (!column) {
+    if (!column && !hasQuery) {
       return filteredRows;
     }
 
     return [...filteredRows].sort((first, second) => {
-      const firstValue = getJournalSortValue(first, column);
-      const secondValue = getJournalSortValue(second, column);
-
-      if (firstValue < secondValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
+      // Primary: search relevance (when query is active)
+      if (hasQuery) {
+        const firstRelevance = getSearchRelevance(first, normalizedQuery);
+        const secondRelevance = getSearchRelevance(second, normalizedQuery);
+        if (firstRelevance !== secondRelevance) {
+          return secondRelevance - firstRelevance;
+        }
       }
 
-      if (firstValue > secondValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
+      // Secondary: user-selected column sort
+      if (column) {
+        const firstValue = getJournalSortValue(first, column);
+        const secondValue = getJournalSortValue(second, column);
+
+        if (firstValue < secondValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+
+        if (firstValue > secondValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
       }
 
       // Tie-breaker: sort by journalEntryId descending (newest first)
@@ -1651,7 +1686,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
       const secondId = Number(second.journalEntryId || 0);
       return secondId - firstId;
     });
-  }, [filteredRows, sortConfig]);
+  }, [filteredRows, sortConfig, query]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
   const visiblePages = getVisiblePages(page, totalPages);
@@ -2168,16 +2203,40 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
           }
         }
 
+        if (!costCenterId || costCenterId === '-1' || costCenterId === '0') {
+          const dbDetailCostCenter = String(detail?.costCenter ?? detail?.CostCenter ?? detail?.['Cost Center'] ?? '');
+          if (dbDetailCostCenter) {
+            const matchedDbClassification = findClassification(nextClassificationRows, dbDetailCostCenter);
+            if (matchedDbClassification) {
+              costCenterId = matchedDbClassification.classificationId;
+              costCenter = matchedDbClassification.display;
+            } else {
+              costCenter = dbDetailCostCenter;
+            }
+          }
+        }
+
+        if (!costCenterId || costCenterId === '-1' || costCenterId === '0') {
+          const headerCostCenterId = String(data?.costCenterID ?? data?.costCenterId ?? data?.CostCenterID ?? data?.CostCenterId ?? '');
+          if (headerCostCenterId && headerCostCenterId !== '-1' && headerCostCenterId !== '0') {
+            const matchedHeaderClassification = findClassification(nextClassificationRows, headerCostCenterId);
+            if (matchedHeaderClassification) {
+              costCenterId = matchedHeaderClassification.classificationId;
+              costCenter = matchedHeaderClassification.display;
+            }
+          }
+        }
+
         return {
           id: Date.now() + index,
           journalDetailId: String(detail?.journalEntryDetailID ?? detail?.journalEntryDetailId ?? detail?.detailID ?? detail?.detailId ?? ''),
           selected: false,
           accountTitleId: accountTitle?.accountTitleId || String(detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
-          costUnitId: costUnit?.costUnitId || String(detail?.costUnitID ?? detail?.costUnitId ?? ''),
+          costUnitId: String(detail?.costUnitID ?? detail?.costUnitId ?? costUnit?.costUnitId ?? ''),
           costCenterId,
           accountCode: accountTitle?.code || '',
           accountTitle: accountTitle?.description || '',
-          subsidiary: costUnit?.display || '',
+          subsidiary: costUnit?.display || detail?.businessUnit || detail?.BusinessUnit || '',
           costCenter: costCenter,
           debit: Number(detail?.debit ?? 0) > 0 ? String(detail.debit) : '',
           credit: Number(detail?.credit ?? 0) > 0 ? String(detail.credit) : '',
@@ -3005,7 +3064,7 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
                 id: index + 1,
                 accountCode: accountTitle?.code || String(detail?.accountCode ?? detail?.AccountCode ?? detail?.accountTitleID ?? detail?.accountTitleId ?? ''),
                 accountTitle: accountTitle?.description || String(detail?.accountDescription ?? detail?.AccountDescription ?? ((detail?.accountTitleID ?? detail?.accountTitleId) ? 'Account Title ' + (detail?.accountTitleID ?? detail?.accountTitleId) : '')),
-                subsidiary: costUnit?.display || String(detail?.subsidiary ?? detail?.Subsidiary ?? ''),
+                subsidiary: costUnit?.display || detail?.businessUnit || detail?.BusinessUnit || '',
                 debit: Number(detail?.debit ?? detail?.Debit ?? 0) > 0 ? String(detail?.debit ?? detail?.Debit) : '',
                 credit: Number(detail?.credit ?? detail?.Credit ?? 0) > 0 ? String(detail?.credit ?? detail?.Credit) : '',
                 remarks: String(detail?.remarks ?? detail?.Remarks ?? ''),
@@ -3343,7 +3402,12 @@ function JournalEntryView({ user, selectedExpense = null, selectedJournalEntry =
 
           <label className="etr-journal-field etr-journal-details-remarks">
             <span>Remarks</span>
-            <textarea value={header.remarks} onChange={(event) => updateHeader('remarks', event.target.value)} rows={3} readOnly={isReadOnlyDetail} />
+            <textarea
+              value={header.remarks}
+              onChange={(event) => updateHeader('remarks', event.target.value)}
+              rows={Math.min(Math.max(String(header.remarks || '').split('\n').length + Math.floor(String(header.remarks || '').length / 80), 2), 10)}
+              readOnly={isReadOnlyDetail}
+            />
           </label>
         </section>
       </div>

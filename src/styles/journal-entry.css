@@ -352,7 +352,7 @@
 }
 
 .etr-journal-manager .etr-journal-table {
-  min-width: 1770px;
+  min-width: 2020px;
   table-layout: auto;
 }
 
@@ -442,11 +442,13 @@
 }
 
 .etr-journal-manager .etr-journal-table th:nth-child(12) {
-  width: 300px;
+  width: 550px;
 }
 
 .etr-journal-manager .etr-journal-table td:nth-child(12) {
-  white-space: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
   line-height: 1.35;
 }
 

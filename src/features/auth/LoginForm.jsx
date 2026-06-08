@@ -6,10 +6,25 @@ import {
 } from '../../services/authStorage';
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
-const profileOptions = ['ETRIS-DEMO', 'ETRIS-MDLI-DIST'];
+const fallbackProfileOptions = [
+  { value: 'ETRIS-DEMO', label: 'ETRIS-DEMO' },
+  { value: 'ETRIS-MDLI-DIST', label: 'ETRIS-MDLI-DIST' },
+  { value: 'ETRIS-MTLSI', label: 'ETRIS-MTLSI' },
+];
 
 function buildApiUrl(path) {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
+function normalizeProfileLabel(value, label) {
+  const trimmedValue = String(value || '').trim();
+  const trimmedLabel = String(label || '').trim();
+
+  if (trimmedLabel && trimmedLabel.toUpperCase().startsWith('ETRIS-')) {
+    return trimmedLabel;
+  }
+
+  return trimmedValue || trimmedLabel;
 }
 
 function getReimbursementNotification(data) {
@@ -54,7 +69,8 @@ function buildSessionData(data, selectedProfile, username) {
 }
 
 function LoginForm({ onLoginSuccess }) {
-  const [selectedProfile, setSelectedProfile] = useState(profileOptions[0]);
+  const [profileOptions, setProfileOptions] = useState(fallbackProfileOptions);
+  const [selectedProfile, setSelectedProfile] = useState(fallbackProfileOptions[0].value);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -79,6 +95,56 @@ function LoginForm({ onLoginSuccess }) {
     };
 
     checkHealth();
+
+    const loadProfiles = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/login/profiles'));
+        const data = await response.json().catch(() => ({}));
+        const defaultProfile = data.defaultProfile ?? data.DefaultProfile ?? '';
+        const profiles = Array.isArray(data.profiles)
+          ? data.profiles
+              .map((profile) => ({
+                value: profile.value ?? profile.Value ?? '',
+                label: normalizeProfileLabel(
+                  profile.value ?? profile.Value ?? '',
+                  profile.label ?? profile.Label ?? '',
+                ),
+              }))
+              .filter((profile) => profile.value)
+          : [];
+
+        if (isMounted && profiles.length > 0) {
+          setProfileOptions(profiles);
+          setSelectedProfile((currentProfile) =>
+            profiles.some((profile) => profile.value === currentProfile)
+              ? currentProfile
+              : profiles.some((profile) => profile.value === defaultProfile)
+                ? defaultProfile
+                : profiles[0].value,
+          );
+        }
+
+        if (isMounted && profiles.length === 0) {
+          setProfileOptions(fallbackProfileOptions);
+          setSelectedProfile((currentProfile) =>
+            fallbackProfileOptions.some((profile) => profile.value === currentProfile)
+              ? currentProfile
+              : fallbackProfileOptions[0].value,
+          );
+        }
+      } catch {
+        if (isMounted) {
+          setProfileOptions(fallbackProfileOptions);
+          setSelectedProfile((currentProfile) =>
+            fallbackProfileOptions.some((profile) => profile.value === currentProfile)
+              ? currentProfile
+              : fallbackProfileOptions[0].value,
+          );
+        }
+      }
+    };
+
+    loadProfiles();
 
     return () => {
       isMounted = false;
@@ -147,8 +213,8 @@ function LoginForm({ onLoginSuccess }) {
           onChange={(event) => setSelectedProfile(event.target.value)}
         >
           {profileOptions.map((profile) => (
-            <option key={profile} value={profile}>
-              {profile}
+            <option key={profile.value} value={profile.value}>
+              {profile.label}
             </option>
           ))}
         </select>
