@@ -14,7 +14,7 @@ const todayDisplay = formatMonthDayYear(new Date());
 const initialOrder = {
   orderNo: '',
   orderDate: todayDisplay,
-  status: 'Draft',
+  status: '',
   creditTerms: '',
   customerPo: '',
   account: '',
@@ -112,12 +112,8 @@ export default function OrderEntry() {
     });
   };
 
-  const authorizePerson = () => {
-    setMessage('Authorized person selection is ready for backend lookup integration.');
-  };
-
-  const closeDraft = () => {
-    setMessage('Order entry draft closed in the frontend.');
+  const closeOrder = () => {
+    setMessage('Order entry closed in the frontend.');
   };
 
   return (
@@ -162,7 +158,7 @@ export default function OrderEntry() {
             </div>
             <div className="etr-expense-grid details">
               <div className="etr-expense-details-left">
-                <Field label="Account">
+                <Field label="Customer Account">
                   <input type="text" value={order.account} onChange={(event) => updateOrder('account', event.target.value)} />
                 </Field>
                 <Field label="Delivery Address">
@@ -182,7 +178,7 @@ export default function OrderEntry() {
               <h2>Status</h2>
               <span>Current posting state</span>
             </div>
-            <strong>{order.status || 'Draft'}</strong>
+            <strong>{order.status || ''}</strong>
           </section>
 
           <section className="etr-expense-card etr-order-total-card">
@@ -214,7 +210,6 @@ export default function OrderEntry() {
               <span>Product, quantity, free goods, discount, and remarks</span>
             </div>
             <div className="etr-expense-actions">
-              <button type="button" onClick={authorizePerson}>Authorize Person</button>
               <button type="button" className="etr-expense-save-button" onClick={addItem}>Add Item</button>
             </div>
           </div>
@@ -269,7 +264,7 @@ export default function OrderEntry() {
           </div>
 
           <div className="etr-order-footer-actions">
-            <button type="button" onClick={closeDraft}>Close</button>
+            <button type="button" onClick={closeOrder}>Close</button>
           </div>
         </section>
       </div>
