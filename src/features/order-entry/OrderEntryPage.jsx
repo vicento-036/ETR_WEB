@@ -1,6 +1,14 @@
 import React, { useMemo, useState } from 'react';
+import { getToken } from '../../services/authStorage';
+import { ENDPOINTS } from '../../constants/endpoints';
 import '../../styles/daily-expense.css';
 import '../../styles/order-entry.css';
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+function buildApiUrl(path) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
 
 function formatMonthDayYear(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -18,6 +26,7 @@ const initialOrder = {
   creditTerms: '',
   customerPo: '',
   account: '',
+  custKey: '',
   deliveryAddress: '',
   remarks: '',
 };
@@ -57,10 +66,250 @@ function Field({ label, children, className = '' }) {
   );
 }
 
+function CustomerLookupModal({
+  isOpen,
+  searchValue,
+  onSearchChange,
+  isLoading,
+  error,
+  rows,
+  onSelect,
+  onClose,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="etr-expense-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-expense-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-customer-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-expense-lookup-head">
+          <h2 id="etr-customer-lookup-title">Select Customer</h2>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <input
+          className="etr-expense-lookup-search"
+          value={searchValue}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search account no or store name"
+          autoFocus
+        />
+
+        <div className="etr-expense-lookup-list">
+          {isLoading ? (
+            <div className="etr-expense-lookup-status">Loading customers...</div>
+          ) : null}
+          {!isLoading && error ? (
+            <div className="etr-expense-lookup-status is-error">{error}</div>
+          ) : null}
+          {!isLoading && !error && rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">No customers found.</div>
+          ) : null}
+          {!isLoading && !error ? rows.map((row) => (
+            <button type="button" key={row.custKey} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
+              <strong>{row.accountNo}</strong>
+              <span>{row.storeName}</span>
+            </button>
+          )) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AddressLookupModal({
+  isOpen,
+  isLoading,
+  error,
+  rows,
+  onSelect,
+  onClose,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="etr-expense-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-expense-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-address-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-expense-lookup-head">
+          <h2 id="etr-address-lookup-title">Select Delivery Address</h2>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="etr-expense-lookup-list">
+          {isLoading ? (
+            <div className="etr-expense-lookup-status">Loading addresses...</div>
+          ) : null}
+          {!isLoading && error ? (
+            <div className="etr-expense-lookup-status is-error">{error}</div>
+          ) : null}
+          {!isLoading && !error && rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">No ship-to addresses found for this customer.</div>
+          ) : null}
+          {!isLoading && !error ? rows.map((row) => (
+            <button type="button" key={row.customerShipToID} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
+              <strong>{row.code}</strong>
+              <span>{row.addressString || row.name}</span>
+            </button>
+          )) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function OrderEntry() {
   const [order, setOrder] = useState(initialOrder);
   const [items, setItems] = useState([createOrderItem()]);
   const [message, setMessage] = useState('');
+  const [isCustomerLookupOpen, setIsCustomerLookupOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerRows, setCustomerRows] = useState([]);
+  const [isCustomersLoading, setIsCustomersLoading] = useState(false);
+  const [customerLookupError, setCustomerLookupError] = useState('');
+  const [isAddressLookupOpen, setIsAddressLookupOpen] = useState(false);
+  const [addressRows, setAddressRows] = useState([]);
+  const [isAddressesLoading, setIsAddressesLoading] = useState(false);
+  const [addressLookupError, setAddressLookupError] = useState('');
+  const [creditTermOptions, setCreditTermOptions] = useState([]);
+  const [shipToOptions, setShipToOptions] = useState([]);
+
+  const openCustomerLookup = () => {
+    setIsCustomerLookupOpen(true);
+    setCustomerSearch('');
+    setCustomerLookupError('');
+    handleCustomerSearch('');
+  };
+
+  const handleCustomerSearch = async (query) => {
+    setCustomerSearch(query);
+    setIsCustomersLoading(true);
+    setCustomerLookupError('');
+
+    try {
+      const token = getToken();
+      const response = await fetch(
+        buildApiUrl(`${ENDPOINTS.orderEntry}/customers?query=${encodeURIComponent(query)}`),
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setCustomerRows(items);
+      } else {
+        setCustomerLookupError(data?.message || 'Failed to search customers.');
+      }
+    } catch {
+      setCustomerLookupError('Network error while searching customers.');
+    } finally {
+      setIsCustomersLoading(false);
+    }
+  };
+
+  const handleCustomerSelect = async (customer) => {
+    setIsCustomerLookupOpen(false);
+
+    setOrder((current) => ({
+      ...current,
+      account: customer.storeName || customer.accountNo,
+      custKey: customer.custKey,
+    }));
+
+    try {
+      const token = getToken();
+      const response = await fetch(
+        buildApiUrl(`${ENDPOINTS.orderEntry}/customers/${customer.custKey}/credit-term`),
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data) {
+        const terms = Array.isArray(data.creditTermOptions) ? data.creditTermOptions : [];
+        setCreditTermOptions(terms);
+
+        const shipToList = Array.isArray(data.shipToOptions) ? data.shipToOptions : [];
+        setShipToOptions(shipToList);
+        const defaultShipTo = shipToList[0];
+        const defaultTerm = terms.find(
+          (t) => t.code === data.creditTermCode || t.crTermKey === data.creditTermKey,
+        );
+
+        setOrder((current) => ({
+          ...current,
+          creditTerms: defaultTerm
+            ? defaultTerm.code || defaultTerm.creditTerm
+            : (data.creditTerm || data.creditTermCode || current.creditTerms),
+          deliveryAddress: defaultShipTo
+            ? (defaultShipTo.addressString || defaultShipTo.name)
+            : current.deliveryAddress,
+        }));
+      }
+    } catch {
+      // Credit term lookup failed silently — already set account name
+    }
+  };
+
+  const openAddressLookup = () => {
+    if (!order.custKey) {
+      return;
+    }
+
+    setIsAddressLookupOpen(true);
+    setAddressRows([]);
+    setAddressLookupError('');
+
+    const loadAddresses = async () => {
+      setIsAddressesLoading(true);
+
+      try {
+        const token = getToken();
+        const response = await fetch(
+          buildApiUrl(`${ENDPOINTS.orderEntry}/customers/${order.custKey}/ship-to-addresses`),
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok) {
+          const items = Array.isArray(data?.items) ? data.items : [];
+          setAddressRows(items);
+        } else {
+          setAddressLookupError(data?.message || 'Failed to load addresses.');
+        }
+      } catch {
+        setAddressLookupError('Network error while loading addresses.');
+      } finally {
+        setIsAddressesLoading(false);
+      }
+    };
+
+    loadAddresses();
+  };
+
+  const handleAddressSelect = (address) => {
+    setIsAddressLookupOpen(false);
+    setOrder((current) => ({
+      ...current,
+      deliveryAddress: address.addressString || address.name || current.deliveryAddress,
+    }));
+  };
 
   const itemTotals = useMemo(() => items.map((item) => {
     const gross = parseAmount(item.detailPrice) * parseAmount(item.quantity);
@@ -147,7 +396,14 @@ export default function OrderEntry() {
                 <input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" value={order.orderDate} onChange={(event) => updateOrder('orderDate', event.target.value)} />
               </Field>
               <Field label="Credit Terms">
-                <input type="text" value={order.creditTerms} onChange={(event) => updateOrder('creditTerms', event.target.value)} />
+                <select value={order.creditTerms} onChange={(event) => updateOrder('creditTerms', event.target.value)}>
+                  <option value="">-- Select Credit Term --</option>
+                  {creditTermOptions.map((ct) => (
+                    <option key={ct.crTermKey} value={ct.code || ct.creditTerm}>
+                      {ct.code}{ct.creditTerm ? ` - ${ct.creditTerm}` : ''}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Customer PO">
                 <input type="text" value={order.customerPo} onChange={(event) => updateOrder('customerPo', event.target.value)} />
@@ -163,10 +419,20 @@ export default function OrderEntry() {
             <div className="etr-expense-grid details">
               <div className="etr-expense-details-left">
                 <Field label="Account">
-                  <input type="text" value={order.account} onChange={(event) => updateOrder('account', event.target.value)} />
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <input type="text" value={order.account} readOnly tabIndex={-1} style={{ flex: 1 }} />
+                    <button type="button" className="etr-order-row-menu" onClick={openCustomerLookup}>...</button>
+                  </div>
                 </Field>
                 <Field label="Delivery Address">
-                  <input type="text" value={order.deliveryAddress} onChange={(event) => updateOrder('deliveryAddress', event.target.value)} />
+                  <select value={order.deliveryAddress} onChange={(event) => updateOrder('deliveryAddress', event.target.value)} disabled={!order.custKey}>
+                    <option value="">-- Select Delivery Address --</option>
+                    {shipToOptions.map((addr) => (
+                      <option key={addr.customerShipToID} value={addr.addressString || addr.name}>
+                        {addr.code ? `${addr.code} - ` : ''}{addr.addressString || addr.name}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </div>
               <Field label="Remarks" className="etr-expense-description">
@@ -273,6 +539,26 @@ export default function OrderEntry() {
           </div>
         </section>
       </div>
+
+      <CustomerLookupModal
+        isOpen={isCustomerLookupOpen}
+        searchValue={customerSearch}
+        onSearchChange={handleCustomerSearch}
+        isLoading={isCustomersLoading}
+        error={customerLookupError}
+        rows={customerRows}
+        onSelect={handleCustomerSelect}
+        onClose={() => setIsCustomerLookupOpen(false)}
+      />
+
+      <AddressLookupModal
+        isOpen={isAddressLookupOpen}
+        isLoading={isAddressesLoading}
+        error={addressLookupError}
+        rows={addressRows}
+        onSelect={handleAddressSelect}
+        onClose={() => setIsAddressLookupOpen(false)}
+      />
     </div>
   );
 }

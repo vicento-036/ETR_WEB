@@ -925,6 +925,7 @@ export default function ExpenseEntryView({
     canApprove: false,
     canReject: false,
   });
+  const [isPermissionsLoading, setIsPermissionsLoading] = useState(true);
   const isDetailMode = !!selectedExpense;
   const isApprovedDetail = normalizeExpenseStatusValue(detailStatus) === EXPENSE_STATUS.APPROVED;
   const isRejectedDetail = normalizeExpenseStatusValue(detailStatus) === EXPENSE_STATUS.REJECTED;
@@ -987,6 +988,7 @@ export default function ExpenseEntryView({
 
   useEffect(() => {
     const loadPermissions = async () => {
+      setIsPermissionsLoading(true);
       try {
         const token = getToken();
         const response = await fetch(buildApiUrl(ACCOUNT_TITLES_PERMISSIONS_ENDPOINT), {
@@ -1025,6 +1027,8 @@ export default function ExpenseEntryView({
           canApprove: false,
           canReject: false,
         });
+      } finally {
+        setIsPermissionsLoading(false);
       }
     };
     loadPermissions();
@@ -1133,7 +1137,7 @@ export default function ExpenseEntryView({
     };
   };
 
-  const loadExistingAttachmentPreviews = async (record, signal) => {
+  const loadExistingAttachmentPreviews = async (record, signal, eagerCount = 1) => {
     const previews = createExistingAttachmentPreviews(record);
 
     if (!previews.length) {
@@ -1141,13 +1145,12 @@ export default function ExpenseEntryView({
     }
 
     const token = getToken();
-    const loadedPreviews = [];
+    const loadedPreviews = [...previews];
     let failedPreviewCount = 0;
 
-    for (const preview of previews) {
+    const loadSinglePreview = async (preview, index) => {
       if (!preview?.url || /^(blob:|data:)/i.test(preview.url)) {
-        loadedPreviews.push(preview);
-        continue;
+        return preview;
       }
 
       try {
@@ -1158,8 +1161,7 @@ export default function ExpenseEntryView({
 
         if (!response.ok) {
           failedPreviewCount += 1;
-          loadedPreviews.push(preview);
-          continue;
+          return preview;
         }
 
         const blob = await response.blob();
@@ -1170,14 +1172,13 @@ export default function ExpenseEntryView({
 
         if (preview.isImage && !blobLooksLikeImage) {
           failedPreviewCount += 1;
-          loadedPreviews.push({ ...preview, isImage: false, type: blob.type || preview.type });
-          continue;
+          return { ...preview, isImage: false, type: blob.type || preview.type };
         }
 
         const objectUrl = URL.createObjectURL(blob);
         attachmentObjectUrlRef.current = [...attachmentObjectUrlRef.current, objectUrl];
 
-        loadedPreviews.push({
+        return {
           ...preview,
           name,
           size: formatAttachmentSize(blob.size),
@@ -1185,19 +1186,34 @@ export default function ExpenseEntryView({
           url: objectUrl,
           isImage: blobLooksLikeImage || preview.isImage,
           isObjectUrl: true,
-        });
+        };
       } catch (error) {
         if (error.name === 'AbortError') {
           throw error;
         }
 
         failedPreviewCount += 1;
-        loadedPreviews.push(preview);
+        return preview;
       }
+    };
+
+    // Load first N previews eagerly (for immediate display)
+    for (let i = 0; i < Math.min(eagerCount, previews.length); i++) {
+      loadedPreviews[i] = await loadSinglePreview(previews[i], i);
+    }
+
+    // Load remaining previews in parallel (background)
+    if (previews.length > eagerCount) {
+      const remainingPromises = previews.slice(eagerCount).map((preview, idx) =>
+        loadSinglePreview(preview, idx + eagerCount).then((loaded) => {
+          loadedPreviews[idx + eagerCount] = loaded;
+        })
+      );
+
+      await Promise.allSettled(remainingPromises);
     }
 
     loadedPreviews.failedPreviewCount = failedPreviewCount;
-
     return loadedPreviews;
   };
 
@@ -1341,7 +1357,7 @@ export default function ExpenseEntryView({
 
       if (existingPreviews.length) {
         setIsAttachmentPreviewLoading(true);
-        loadExistingAttachmentPreviews(selectedExpense, controller.signal)
+        loadExistingAttachmentPreviews(selectedExpense, controller.signal, 1)
           .then((loadedPreviews) => {
             if (controller.signal.aborted) {
               return;
@@ -2102,26 +2118,36 @@ export default function ExpenseEntryView({
           {isDetailMode ? (
             <>
               <button type="button" onClick={onBack} disabled={isSaving}>Back</button>
-              {!isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
-                <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSaving}>
-                  {isEditingDetail ? 'Cancel Edit' : 'Edit'}
-                </button>
-              ) : null}
-              {isEditingDetail && !isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
-                <button type="button" className="etr-expense-save-button" onClick={handleUpdateDetail} disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-              ) : null}
-              {!isApprovedDetail && !isRejectedDetail && permissions?.canReject ? (
-                <button type="button" onClick={handleReject} disabled={isSaving}>
-                  {isSaving ? 'Rejecting...' : 'Reject'}
-                </button>
-              ) : null}
-              {!isApprovedDetail && !isRejectedDetail && permissions?.canApprove ? (
-                <button type="button" className="etr-expense-save-button" onClick={handleApprove} disabled={isSaving}>
-                  {isSaving ? 'Approving...' : 'Approve'}
-                </button>
-              ) : null}
+              {isPermissionsLoading ? (
+                <>
+                  <button type="button" disabled>Edit</button>
+                  <button type="button" disabled>Reject</button>
+                  <button type="button" className="etr-expense-save-button" disabled>Approve</button>
+                </>
+              ) : (
+                <>
+                  {!isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
+                    <button type="button" onClick={() => setIsEditingDetail((current) => !current)} disabled={isSaving}>
+                      {isEditingDetail ? 'Cancel Edit' : 'Edit'}
+                    </button>
+                  ) : null}
+                  {isEditingDetail && !isApprovedDetail && !isRejectedDetail && permissions?.canEdit ? (
+                    <button type="button" className="etr-expense-save-button" onClick={handleUpdateDetail} disabled={isSaving}>
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  ) : null}
+                  {!isApprovedDetail && !isRejectedDetail && permissions?.canReject ? (
+                    <button type="button" onClick={handleReject} disabled={isSaving}>
+                      {isSaving ? 'Rejecting...' : 'Reject'}
+                    </button>
+                  ) : null}
+                  {!isApprovedDetail && !isRejectedDetail && permissions?.canApprove ? (
+                    <button type="button" className="etr-expense-save-button" onClick={handleApprove} disabled={isSaving}>
+                      {isSaving ? 'Approving...' : 'Approve'}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </>
           ) : (
             <>

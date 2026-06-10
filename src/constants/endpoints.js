@@ -13,5 +13,6 @@ export const ENDPOINTS = {
   journalEntryPermissions: '/api/journal-entry/permissions',
   login: '/api/login',
   logout: '/api/login/logout',
+  orderEntry: '/api/order-entry',
   systemClassifications: '/api/system-classifications/hierarchical',
 };
