@@ -974,8 +974,7 @@
 }
 
 .etr-journal-side-stack {
-  position: sticky;
-  top: 12px;
+  position: static;
   align-content: start;
   gap: 12px;
   grid-template-rows: auto;

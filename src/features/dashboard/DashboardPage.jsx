@@ -18,6 +18,7 @@ const sidebarSections = [
   {
     id: 'sales',
     title: 'Sales',
+    icon: 'sales',
     children: [
       { id: 'customer', label: 'Customer', icon: 'group' },
       { id: 'sales-agent', label: 'Sales Agent', icon: 'person' },
@@ -41,6 +42,7 @@ const sidebarSections = [
   {
     id: 'logistics',
     title: 'Logistics',
+    icon: 'logistics',
     children: [
       { id: 'picklist-entry', label: 'Picklist Entry', icon: 'clipboard' },
       { id: 'delivery-manifest', label: 'Delivery Manifest', icon: 'table' },
@@ -49,6 +51,7 @@ const sidebarSections = [
   {
     id: 'inventory',
     title: 'Inventory',
+    icon: 'inventory',
     children: [
       { id: 'purchase-order', label: 'Purchase Order', icon: 'document' },
       { id: 'supplier-returns', label: 'Supplier Returns', icon: 'folder' },
@@ -59,6 +62,7 @@ const sidebarSections = [
   {
     id: 'finance',
     title: 'Finance',
+    icon: 'finance',
     children: [
       { id: 'daily-expense-manager', label: 'Daily Expense Manager', icon: 'table' },
       { id: 'expense-entry', label: 'Daily Expense Entry', icon: 'document' },
@@ -73,6 +77,7 @@ const sidebarSections = [
   {
     id: 'analytics',
     title: 'Analytics',
+    icon: 'analytics',
     children: [
       { id: 'stock-inquiry', label: 'Stock Inquiry', icon: 'bars' },
       { id: 'lot-inquiry', label: 'Lot inquiry', icon: 'table' },
@@ -208,6 +213,11 @@ function SidebarIcon({ type }) {
     globe: <path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm0 2a7 7 0 0 0-1.9 13.73c-.69-1.34-1.11-3.05-1.11-4.73H6.2A7.02 7.02 0 0 0 12 19Zm0-2c.77 0 1.86 1.3 2.48 3H9.52C10.14 4.3 11.23 3 12 3Zm3.11 5A15.3 15.3 0 0 1 15.8 12H8.2c.08-1.44.31-2.79.69-4h6.22ZM17.8 14h-2.8c0 1.68-.42 3.39-1.11 4.73A7.02 7.02 0 0 0 17.8 14Zm-4.37 0h-2.86c.3 1.93.95 3.43 1.43 3.88.48-.45 1.13-1.95 1.43-3.88Zm-.01-10c.7 1.35 1.12 3.06 1.12 4.74h2.8A7.02 7.02 0 0 0 13.42 4ZM6.2 10h2.8c0-1.68.42-3.39 1.12-4.74A7.02 7.02 0 0 0 6.2 10Z" />,
     group: <path d="M9 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm6 1a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM4 19v-1c0-2.76 2.24-5 5-5s5 2.24 5 5v1H4Zm11-.2V18c0-1.45-.5-2.78-1.34-3.83A4.5 4.5 0 0 1 20 18v.8h-5Z" />,
     person: <path d="M12 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm-6 8c0-3.31 2.69-6 6-6s6 2.69 6 6H6Z" />,
+    sales: <path d="M4 19h16v2H4v-2Zm1-3 4.4-4.4 3.2 3.2L19 8.4V12h2V5h-7v2h3.6l-5 5-3.2-3.2L3.6 14.6 5 16Z" />,
+    logistics: <path d="M3 6h11v9h1.1A3 3 0 0 1 21 16v2h-2a3 3 0 0 1-6 0H9a3 3 0 0 1-6 0H2V8a2 2 0 0 1 1-2Zm2 2v7h7V8H5Zm10 2v5h3.7l-1.3-3H15v-2ZM6 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm10 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />,
+    inventory: <path d="M4 5 12 2l8 3v14l-8 3-8-3V5Zm2.8 1L12 8l5.2-2L12 4 6.8 6ZM6 7.6v10l5 1.9v-10L6 7.6Zm7 11.9 5-1.9v-10l-5 1.9v10Z" />,
+    finance: <path d="M12 3a7 7 0 0 1 7 7h-2a5 5 0 1 0-5 5h1v-2h-1a3 3 0 1 1 3-3h2a5 5 0 0 0-5-5Zm2 13h2v-2h2v2h2v2h-2v2h-2v-2h-2v-2Z" />,
+    analytics: <path d="M5 19h14v2H5v-2Zm1-2V9h3v8H6Zm5 0V4h3v13h-3Zm5 0v-6h3v6h-3Z" />,
   };
 
   return <svg viewBox="0 0 24 24" aria-hidden="true">{icons[type]}</svg>;
@@ -697,7 +707,7 @@ function DashboardPage({ user, onLogout }) {
   const navigate = useNavigate();
   const { moduleId = '' } = useParams();
   const filteredSidebarSections = useMemo(() => filterSidebarSectionsByAccess(sidebarSections, user), [user]);
-  const [sidebarWidth, setSidebarWidth] = useState(398);
+  const [sidebarWidth, setSidebarWidth] = useState(76);
   const [isSidebarDrawerOpen, setIsSidebarDrawerOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
@@ -714,6 +724,7 @@ function DashboardPage({ user, onLogout }) {
   const searchBlurTimeoutRef = useRef(null);
   const profileMenuRef = useRef(null);
   const activeItemId = moduleId;
+  const isSidebarCollapsed = sidebarWidth <= 96;
   const displayName = getUserDisplayName(user);
   const userInitials = getUserInitials(displayName);
   const activeProfile = getUserProfile(user);
@@ -814,7 +825,7 @@ function DashboardPage({ user, onLogout }) {
 
       const deltaX = event.clientX - dragStateRef.current.startX;
       const nextWidth = dragStateRef.current.startWidth + deltaX;
-      setSidebarWidth(Math.max(0, Math.min(520, nextWidth)));
+      setSidebarWidth(Math.max(76, Math.min(520, nextWidth)));
     };
 
     const handlePointerUp = () => {
@@ -883,12 +894,25 @@ function DashboardPage({ user, onLogout }) {
 
   const handleShowSidebar = () => {
     if (window.matchMedia('(max-width: 900px)').matches) {
-      setSidebarWidth((currentWidth) => (currentWidth > 0 ? currentWidth : 398));
+      setSidebarWidth((currentWidth) => (currentWidth > 96 ? currentWidth : 320));
       setIsSidebarDrawerOpen((isOpen) => !isOpen);
       return;
     }
 
-    setSidebarWidth(sidebarWidth > 0 ? 0 : 398);
+    setSidebarWidth(sidebarWidth > 96 ? 76 : 320);
+  };
+
+  const handleToggleSection = (sectionId) => {
+    if (!window.matchMedia('(max-width: 900px)').matches && isSidebarCollapsed) {
+      setSidebarWidth(320);
+      setOpenSections((current) => ({
+        ...current,
+        [sectionId]: true,
+      }));
+      return;
+    }
+
+    toggleSection(sectionId);
   };
 
   const handleSelectSearchResult = (entry) => {
@@ -912,8 +936,8 @@ function DashboardPage({ user, onLogout }) {
       setIsSidebarDrawerOpen(true);
     }
 
-    if (sidebarWidth <= 0) {
-      setSidebarWidth(398);
+    if (sidebarWidth <= 96) {
+      setSidebarWidth(320);
     }
 
     setSearchQuery('');
@@ -1040,7 +1064,7 @@ function DashboardPage({ user, onLogout }) {
 
       <ReimbursementDeadlineAlert user={user} />
 
-      <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 9px 1fr` }}>
+      <div className="etr-dashboard-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px 1fr` }}>
         <button
           type="button"
           className={`etr-dashboard-sidebar-scrim ${isSidebarDrawerOpen ? 'is-visible' : ''}`}
@@ -1048,7 +1072,7 @@ function DashboardPage({ user, onLogout }) {
           aria-label="Close sidebar"
         />
 
-        <aside className={`etr-dashboard-sidebar ${sidebarWidth <= 0 ? 'is-collapsed' : ''} ${isSidebarDrawerOpen ? 'is-drawer-open' : ''}`}>
+        <aside className={`etr-dashboard-sidebar ${isSidebarCollapsed ? 'is-collapsed' : ''} ${isSidebarDrawerOpen ? 'is-drawer-open' : ''}`}>
           {filteredSidebarSections.map((section) => {
             const isOpen = !!openSections[section.id];
 
@@ -1057,15 +1081,21 @@ function DashboardPage({ user, onLogout }) {
                 <button
                   type="button"
                   className={`etr-dashboard-section-toggle etr-dashboard-top-category ${isOpen ? 'is-open' : ''}`}
-                  onClick={() => toggleSection(section.id)}
+                  onClick={() => handleToggleSection(section.id)}
+                  aria-label={section.title}
                 >
-                  <span>{section.title}</span>
+                  <span className="etr-dashboard-item-main">
+                    <span className="etr-dashboard-item-icon">
+                      <SidebarIcon type={section.icon} />
+                    </span>
+                    <span className="etr-dashboard-section-label">{section.title}</span>
+                  </span>
                   <span className="etr-dashboard-item-arrow" aria-hidden="true">
                     <ChevronIcon isOpen={isOpen} />
                   </span>
                 </button>
 
-                {isOpen ? (
+                {isOpen && !isSidebarCollapsed ? (
                   <ul className="etr-dashboard-child-list">
                     {section.children.map((item) => (
                       <DashboardNode

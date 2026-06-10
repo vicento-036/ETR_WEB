@@ -8,6 +8,7 @@
   --etr-dashboard-ink-soft: #56708c;
   --etr-dashboard-line: rgba(20, 62, 109, 0.12);
   --etr-dashboard-glow: rgba(255, 255, 255, 0.16);
+  --etr-dashboard-topbar-height: 72px;
   display: flex;
   flex-direction: column;
   font-family: "Segoe UI Variable", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -21,6 +22,9 @@
 }
 
 .etr-dashboard-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: grid;
   grid-template-columns: 48px minmax(220px, auto) minmax(260px, 560px) auto;
   align-items: center;
@@ -280,6 +284,7 @@
   grid-template-columns: 398px 9px 1fr;
   flex: 1;
   min-height: 0;
+  align-items: start;
 }
 
 .etr-dashboard-sidebar-scrim {
@@ -287,6 +292,10 @@
 }
 
 .etr-dashboard-sidebar {
+  position: sticky;
+  top: var(--etr-dashboard-topbar-height);
+  z-index: 70;
+  height: calc(100vh - var(--etr-dashboard-topbar-height));
   min-width: 0;
   overflow-y: auto;
   border-right: 1px solid rgba(4, 21, 40, 0.2);
@@ -297,9 +306,9 @@
 }
 
 .etr-dashboard-sidebar.is-collapsed {
-  overflow: hidden;
-  border-right: 0;
-  padding: 0;
+  overflow: visible;
+  padding: 14px 8px;
+  border-right: 1px solid rgba(4, 21, 40, 0.16);
 }
 
 .etr-dashboard-section,
@@ -338,6 +347,50 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section {
+  position: relative;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section + .etr-dashboard-section {
+  margin-top: 8px;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section-toggle {
+  justify-content: center;
+  min-height: 54px;
+  padding: 0;
+  border-radius: 18px;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section-toggle::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  z-index: 200;
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: rgba(7, 27, 47, 0.94);
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: uppercase;
+  transform: translate(-4px, -50%);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section-toggle:hover::after,
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section-toggle:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 
 .etr-dashboard-section-toggle:hover,
@@ -416,6 +469,32 @@
   fill: currentColor;
 }
 
+.etr-dashboard-section-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-item-main {
+  justify-content: center;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-section-label,
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-item-arrow {
+  display: none;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+}
+
+.etr-dashboard-sidebar.is-collapsed .etr-dashboard-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .etr-dashboard-item-arrow {
   color: rgba(214, 234, 255, 0.82);
   display: inline-flex;
@@ -442,22 +521,47 @@
 }
 
 .etr-dashboard-resizer {
-  width: 9px;
+  position: sticky;
+  top: var(--etr-dashboard-topbar-height);
+  z-index: 60;
+  width: 10px;
+  height: calc(100vh - var(--etr-dashboard-topbar-height));
   padding: 0;
   border: 0;
   background: linear-gradient(180deg, rgba(18, 62, 109, 0.12), rgba(18, 62, 109, 0.02));
   cursor: col-resize;
 }
 
+.etr-dashboard-resizer::before {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 44px;
+  margin: 18px auto 0;
+  border-radius: 999px;
+  background: rgba(18, 62, 109, 0.18);
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
 .etr-dashboard-resizer:hover {
   background: linear-gradient(180deg, rgba(18, 62, 109, 0.26), rgba(18, 62, 109, 0.12));
 }
 
+.etr-dashboard-resizer:hover::before,
+.etr-dashboard-resizer:focus-visible::before {
+  background: rgba(18, 62, 109, 0.42);
+  opacity: 1;
+}
+
 .etr-dashboard-main {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  width: 100%;
 }
 
 .etr-dashboard-canvas {

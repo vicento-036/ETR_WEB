@@ -9,6 +9,10 @@
   grid-template-columns: minmax(0, 1fr) 300px;
 }
 
+.etr-order-entry .etr-expense-side-stack {
+  position: static;
+}
+
 .etr-order-info-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
