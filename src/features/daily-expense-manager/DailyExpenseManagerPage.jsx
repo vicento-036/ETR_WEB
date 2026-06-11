@@ -2271,47 +2271,76 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [allRows, setAllRows] = useState([]);
 
-  const loadDailyExpenses = useCallback(async (signal) => {
+  const costUnitCacheRef = useRef(null);
+
+  const loadCostUnits = useCallback(async (signal) => {
+    if (costUnitCacheRef.current) {
+      return costUnitCacheRef.current;
+    }
+
     const token = getToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await fetch(buildApiUrl(COST_UNITS_ENDPOINT), { headers, signal });
+    const costUnitData = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(costUnitData?.message || 'Unable to load subsidiaries.');
+    }
+
+    const map = new Map(
+      getApiCollection(costUnitData)
+        .map(normalizeCostUnit)
+        .filter(Boolean)
+        .map((item) => [item.costUnitId, item.display])
+    );
+
+    costUnitCacheRef.current = map;
+    return map;
+  }, []);
+
+  const loadDailyExpenses = useCallback(async (signal, targetPage = 1, search = '', sortCol = '', sortDir = '') => {
     setIsLoading(true);
     setLoadError('');
 
     try {
+      const token = getToken();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const [expenseResponse, costUnitResponse] = await Promise.all([
-        fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), {
-          headers,
-          signal,
-        }),
-        fetch(buildApiUrl(COST_UNITS_ENDPOINT), {
-          headers,
-          signal,
-        }),
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: String(MANAGER_PAGE_SIZE),
+      });
+
+      if (search) {
+        params.set('search', search);
+      }
+      if (sortCol) {
+        params.set('sortColumn', sortCol);
+        params.set('sortDirection', sortDir || 'asc');
+      }
+
+      const pagedUrl = `${DAILY_EXPENSE_ENDPOINT}?${params.toString()}`;
+
+      const [expenseResponse, subsidiaryById] = await Promise.all([
+        fetch(buildApiUrl(pagedUrl), { headers, signal }),
+        loadCostUnits(signal),
       ]);
 
       const expenseData = await expenseResponse.json().catch(() => ({}));
-      const costUnitData = await costUnitResponse.json().catch(() => ({}));
 
       if (!expenseResponse.ok) {
         throw new Error(expenseData?.message || 'Unable to load daily expense transactions.');
       }
 
-      if (!costUnitResponse.ok) {
-        throw new Error(costUnitData?.message || 'Unable to load subsidiaries.');
-      }
-
-      const subsidiaryById = new Map(
-        getApiCollection(costUnitData)
-          .map(normalizeCostUnit)
-          .filter(Boolean)
-          .map((item) => [item.costUnitId, item.display])
-      );
-
       const normalizedRows = getApiCollection(expenseData)
         .map((row) => normalizeDailyExpense(row, subsidiaryById));
 
       setRows(dedupeNormalizedDailyExpenses(normalizedRows));
+      setTotalCount(expenseData.totalCount ?? 0);
+      setTotalPages(expenseData.totalPages ?? 1);
     } catch (error) {
       if (error.name !== 'AbortError') {
         setRows([]);
@@ -2322,53 +2351,66 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [loadCostUnits]);
+
+  const loadAllExpenses = useCallback(async (signal) => {
+    const token = getToken();
+    setIsLoading(true);
+    setLoadError('');
+
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [expenseResponse, subsidiaryById] = await Promise.all([
+        fetch(buildApiUrl(DAILY_EXPENSE_ENDPOINT), { headers, signal }),
+        loadCostUnits(signal),
+      ]);
+
+      const expenseData = await expenseResponse.json().catch(() => ({}));
+
+      if (!expenseResponse.ok) {
+        throw new Error(expenseData?.message || 'Unable to load daily expense transactions.');
+      }
+
+      const normalizedRows = getApiCollection(expenseData)
+        .map((row) => normalizeDailyExpense(row, subsidiaryById));
+
+      return dedupeNormalizedDailyExpenses(normalizedRows);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setLoadError(error.message || 'Unable to load daily expense transactions.');
+      }
+      return [];
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
+    }
+  }, [loadCostUnits]);
+
+  const openReport = useCallback(async () => {
+    const controller = new AbortController();
+    const allData = await loadAllExpenses(controller.signal);
+    setAllRows(allData);
+    setIsReportOpen(true);
+  }, [loadAllExpenses]);
+
+  const normalizedQuery = query.trim();
 
   useEffect(() => {
     const controller = new AbortController();
 
-    loadDailyExpenses(controller.signal);
+    loadDailyExpenses(controller.signal, page, normalizedQuery, sortConfig.key, sortConfig.direction);
 
     return () => controller.abort();
-  }, [loadDailyExpenses]);
-
-  const normalizedQuery = query.trim().toLowerCase();
-
-  const filteredRows = useMemo(() => {
-    if (!normalizedQuery) {
-      return rows;
-    }
-
-    return rows.filter((row) => rowMatchesManagerQuery(row, normalizedQuery));
-  }, [normalizedQuery, rows]);
-
-  const sortedRows = useMemo(() => {
-    if (!sortConfig.key) {
-      return [...filteredRows];
-    }
-
-    const column = columns.find((item) => item.key === sortConfig.key);
-
-    if (!column) {
-      return [...filteredRows];
-    }
-
-    return [...filteredRows].sort((first, second) => compareManagerRows(first, second, column, sortConfig.direction));
-  }, [filteredRows, sortConfig]);
-
-  const { rows: pagedRows, safePage, totalPages } = useMemo(
-    () => getManagerPagedRows(sortedRows, page),
-    [sortedRows, page],
-  );
-  const visiblePages = getVisiblePages(safePage, totalPages);
+  }, [loadDailyExpenses, page, normalizedQuery, sortConfig.key, sortConfig.direction]);
 
   useEffect(() => {
     setPage(1);
   }, [normalizedQuery, sortConfig.key, sortConfig.direction]);
 
-  useEffect(() => {
-    setPage((current) => Math.min(current, totalPages));
-  }, [totalPages]);
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const pagedRows = rows;
+  const visiblePages = getVisiblePages(safePage, totalPages);
 
   const handleSort = (event, columnKey, direction) => {
     event.preventDefault();
@@ -2382,12 +2424,12 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
   if (isReportOpen) {
     return (
       <ExpenseReportView
-        rows={rows}
+        rows={allRows}
         user={user}
         isLoading={isLoading}
         loadError={loadError}
         onBack={() => setIsReportOpen(false)}
-        onRefresh={() => loadDailyExpenses()}
+        onRefresh={async () => { costUnitCacheRef.current = null; await loadAllExpenses(); }}
         onJournalEntryCreated={onJournalEntryCreated}
       />
     );
@@ -2403,7 +2445,7 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
         </div>
 
         <div className="etr-expense-actions">
-          <button type="button" onClick={() => setIsReportOpen(true)}>Generate Expense Report</button>
+          <button type="button" onClick={openReport}>Generate Expense Report</button>
           <button type="button" className="etr-expense-save-button" onClick={onNewEntry}>New Entry</button>
         </div>
       </div>
@@ -2414,7 +2456,7 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
         <div className="etr-expense-table-head">
           <div>
             <h2>Daily Expense Transactions</h2>
-            <span>{isLoading ? 'Loading transactions...' : `${sortedRows.length} transaction${sortedRows.length === 1 ? '' : 's'} found`}</span>
+            <span>{isLoading ? 'Loading transactions...' : `${totalCount} transaction${totalCount === 1 ? '' : 's'} found`}</span>
           </div>
 
           <label className="etr-expense-manager-search">
@@ -2460,7 +2502,7 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
               </tr>
             </thead>
             <tbody key={tableBodyKey}>
-              {!isLoading && sortedRows.length === 0 ? (
+              {!isLoading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length}>No daily expense transactions found.</td>
                 </tr>
@@ -2487,10 +2529,10 @@ export default function DailyExpenseManager({ user, onNewEntry, onOpenExpense, o
           </table>
         </div>
 
-        {sortedRows.length > 0 ? (
+        {totalCount > 0 ? (
           <div className="etr-expense-pagination" aria-label="Daily expense pagination">
             <span>
-              Showing {(safePage - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(safePage * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
+              Showing {(safePage - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(safePage * MANAGER_PAGE_SIZE, totalCount)} of {totalCount}
             </span>
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage === 1}>
               Previous
