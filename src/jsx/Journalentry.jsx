@@ -1322,6 +1322,8 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [sortConfig, setSortConfig] = useState({ key: 'entryDate', direction: 'desc' });
   const rowClickTimerRef = useRef(null);
   const [entryRows, setEntryRows] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [bookRows, setBookRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -1361,6 +1363,8 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     return () => controller.abort();
   }, []);
 
+  const normalizedQuery = query.trim();
+
   useEffect(() => {
     const token = getToken();
     const controller = new AbortController();
@@ -1371,8 +1375,23 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
 
       try {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(MANAGER_PAGE_SIZE),
+        });
+
+        if (normalizedQuery) {
+          params.set('search', normalizedQuery);
+        }
+        if (sortConfig.key) {
+          params.set('sortColumn', sortConfig.key);
+          params.set('sortDirection', sortConfig.direction || 'asc');
+        }
+
+        const pagedUrl = `${JOURNAL_ENTRY_ENDPOINT}?${params.toString()}`;
+
         const [journalResponse, bookResponse, employeeResponse] = await Promise.all([
-          fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal: controller.signal }),
+          fetch(buildApiUrl(pagedUrl), { headers, signal: controller.signal }),
           fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal: controller.signal }),
           fetch(buildApiUrl(EMPLOYEES_ENDPOINT), { headers, signal: controller.signal }),
         ]);
@@ -1394,10 +1413,14 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           : [];
         setBookRows(nextBookRows);
         setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows, nextEmployeeRows)));
+        setTotalCount(journalData.totalCount ?? 0);
+        setTotalPages(journalData.totalPages ?? 1);
       } catch (error) {
         if (error.name !== 'AbortError') {
           setLoadError(error.message || 'Unable to load journal entries.');
           setEntryRows([]);
+          setTotalCount(0);
+          setTotalPages(1);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -1409,57 +1432,18 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     loadRows();
 
     return () => controller.abort();
-  }, []);
-
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return entryRows;
-    }
-
-    return entryRows.filter((row) => (
-      managerColumns.some((column) => String(row[column.key] || '').toLowerCase().includes(normalizedQuery))
-    ));
-  }, [entryRows, query]);
-
-  const sortedRows = useMemo(() => {
-    const column = managerColumns.find((item) => item.key === sortConfig.key);
-
-    if (!column) {
-      return filteredRows;
-    }
-
-    return [...filteredRows].sort((first, second) => {
-      const firstValue = getJournalSortValue(first, column);
-      const secondValue = getJournalSortValue(second, column);
-
-      if (firstValue < secondValue) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-
-      if (firstValue > secondValue) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-
-      // Tie-breaker: sort by journalEntryId descending (newest first)
-      const firstId = Number(first.journalEntryId || 0);
-      const secondId = Number(second.journalEntryId || 0);
-      return secondId - firstId;
-    });
-  }, [filteredRows, sortConfig]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
-  const visiblePages = getVisiblePages(page, totalPages);
-  const pagedRows = sortedRows.slice((page - 1) * MANAGER_PAGE_SIZE, page * MANAGER_PAGE_SIZE);
+  }, [page, normalizedQuery, sortConfig.key, sortConfig.direction]);
 
   useEffect(() => {
     setPage(1);
-  }, [query, sortConfig.key, sortConfig.direction]);
+  }, [normalizedQuery, sortConfig.key, sortConfig.direction]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
+
+  const visiblePages = getVisiblePages(page, totalPages);
+  const pagedRows = entryRows;
 
   const handleSort = (columnKey) => {
     setSortConfig((current) => ({
@@ -1557,7 +1541,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         <div className="etr-journal-panel-head">
           <div>
             <h2>Journal Entries</h2>
-            <span>{isLoading ? 'Loading journal entries...' : `${sortedRows.length} record${sortedRows.length === 1 ? '' : 's'} found`}</span>
+            <span>{isLoading ? 'Loading journal entries...' : `${totalCount} record${totalCount === 1 ? '' : 's'} found`}</span>
           </div>
 
           <label className="etr-journal-search">
@@ -1593,7 +1577,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.length === 0 ? (
+              {entryRows.length === 0 ? (
                 <tr>
                   <td colSpan={managerColumns.length}>No journal entries found.</td>
                 </tr>
@@ -1620,10 +1604,10 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           </table>
         </div>
 
-        {sortedRows.length > 0 ? (
+        {totalCount > 0 ? (
           <div className="etr-journal-pagination" aria-label="Journal manager pagination">
             <span>
-              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
+              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, totalCount)} of {totalCount}
             </span>
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
               Previous

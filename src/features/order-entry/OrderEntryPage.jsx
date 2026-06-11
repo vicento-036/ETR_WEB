@@ -28,6 +28,7 @@ const initialOrder = {
   account: '',
   custKey: '',
   deliveryAddress: '',
+  isNewCustomer: false,
   remarks: '',
 };
 
@@ -57,6 +58,26 @@ function formatAmount(value) {
   }).format(value);
 }
 
+function readBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    return value.toLowerCase() === 'true' || value === '1';
+  }
+
+  return fallback;
+}
+
+function getIsNewCustomer(value, fallback = false) {
+  return readBoolean(value?.isNewCustomer ?? value?.IsNewCustomer, fallback);
+}
+
 function Field({ label, children, className = '' }) {
   return (
     <label className={`etr-expense-field etr-order-field ${className}`}>
@@ -71,9 +92,11 @@ function CustomerLookupModal({
   searchValue,
   onSearchChange,
   isLoading,
+  isCreating,
   error,
   rows,
   onSelect,
+  onCreateNew,
   onClose,
 }) {
   if (!isOpen) {
@@ -98,24 +121,36 @@ function CustomerLookupModal({
           className="etr-expense-lookup-search"
           value={searchValue}
           onChange={(event) => onSearchChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !isLoading && rows.length === 0 && searchValue.trim()) {
+              event.preventDefault();
+              onCreateNew();
+            }
+          }}
+          maxLength={255}
           placeholder="Search account no or store name"
           autoFocus
         />
 
         <div className="etr-expense-lookup-list">
-          {isLoading ? (
+          {isCreating ? (
+            <div className="etr-expense-lookup-status">Adding customer...</div>
+          ) : null}
+          {!isCreating && isLoading ? (
             <div className="etr-expense-lookup-status">Loading customers...</div>
           ) : null}
-          {!isLoading && error ? (
+          {!isCreating && !isLoading && error ? (
             <div className="etr-expense-lookup-status is-error">{error}</div>
           ) : null}
-          {!isLoading && !error && rows.length === 0 ? (
-            <div className="etr-expense-lookup-status">No customers found.</div>
+          {!isCreating && !isLoading && !error && rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">
+              No customers found.
+            </div>
           ) : null}
-          {!isLoading && !error ? rows.map((row) => (
+          {!isCreating && !isLoading && !error ? rows.map((row) => (
             <button type="button" key={row.custKey} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
-              <strong>{row.accountNo}</strong>
-              <span>{row.storeName}</span>
+              <strong>{row.customerName || row.storeName || row.accountNo}</strong>
+              <span>{row.customerAddress || row.storeName || row.accountNo}</span>
             </button>
           )) : null}
         </div>
@@ -172,6 +207,104 @@ function AddressLookupModal({
   );
 }
 
+function CreditTermLookupModal({
+  isOpen,
+  rows,
+  onSelect,
+  onClose,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="etr-expense-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-expense-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-credit-term-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-expense-lookup-head">
+          <h2 id="etr-credit-term-lookup-title">Select Credit Term</h2>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="etr-expense-lookup-list">
+          {rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">No credit terms found.</div>
+          ) : null}
+          {rows.map((row) => (
+            <button type="button" key={row.crTermKey} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
+              <strong>{row.code}</strong>
+              <span>{row.creditTerm}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ItemLookupModal({
+  isOpen,
+  searchValue,
+  onSearchChange,
+  isLoading,
+  error,
+  rows,
+  onSelect,
+  onClose,
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="etr-expense-lookup-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        className="etr-expense-lookup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="etr-item-lookup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="etr-expense-lookup-head">
+          <h2 id="etr-item-lookup-title">Select Item</h2>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <input
+          className="etr-expense-lookup-search"
+          value={searchValue}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search item code or description"
+          autoFocus
+        />
+
+        <div className="etr-expense-lookup-list">
+          {isLoading ? (
+            <div className="etr-expense-lookup-status">Loading items...</div>
+          ) : null}
+          {!isLoading && error ? (
+            <div className="etr-expense-lookup-status is-error">{error}</div>
+          ) : null}
+          {!isLoading && !error && rows.length === 0 ? (
+            <div className="etr-expense-lookup-status">No items found.</div>
+          ) : null}
+          {!isLoading && !error ? rows.map((row) => (
+            <button type="button" key={row.itemKey} className="etr-expense-lookup-option" onClick={() => onSelect(row)}>
+              <strong>{row.code}</strong>
+              <span>{row.description}</span>
+            </button>
+          )) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function OrderEntry() {
   const [order, setOrder] = useState(initialOrder);
   const [items, setItems] = useState([createOrderItem()]);
@@ -181,17 +314,92 @@ export default function OrderEntry() {
   const [customerRows, setCustomerRows] = useState([]);
   const [isCustomersLoading, setIsCustomersLoading] = useState(false);
   const [customerLookupError, setCustomerLookupError] = useState('');
+  const [isManualCustomerMode, setIsManualCustomerMode] = useState(false);
+  const [pendingNewCustomerName, setPendingNewCustomerName] = useState('');
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [createCustomerError, setCreateCustomerError] = useState('');
   const [isAddressLookupOpen, setIsAddressLookupOpen] = useState(false);
   const [addressRows, setAddressRows] = useState([]);
   const [isAddressesLoading, setIsAddressesLoading] = useState(false);
   const [addressLookupError, setAddressLookupError] = useState('');
   const [creditTermOptions, setCreditTermOptions] = useState([]);
   const [shipToOptions, setShipToOptions] = useState([]);
+  const [isCreditTermLookupOpen, setIsCreditTermLookupOpen] = useState(false);
+  const [isItemLookupOpen, setIsItemLookupOpen] = useState(false);
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemRows, setItemRows] = useState([]);
+  const [isItemsLoading, setIsItemsLoading] = useState(false);
+  const [itemLookupError, setItemLookupError] = useState('');
+  const [activeRowId, setActiveRowId] = useState(null);
+
+  const openCreditTermLookup = () => {
+    if (order.isNewCustomer) {
+      return;
+    }
+
+    setIsCreditTermLookupOpen(true);
+  };
+
+  const handleCreditTermSelect = (ct) => {
+    setIsCreditTermLookupOpen(false);
+    setOrder((current) => ({
+      ...current,
+      creditTerms: ct.creditTerm || ct.code,
+    }));
+  };
+
+  const openItemLookup = (rowId) => {
+    setActiveRowId(rowId);
+    setIsItemLookupOpen(true);
+    setItemSearch('');
+    setItemLookupError('');
+    handleItemSearch('');
+  };
+
+  const handleItemSearch = async (query) => {
+    setItemSearch(query);
+    setIsItemsLoading(true);
+    setItemLookupError('');
+
+    try {
+      const token = getToken();
+      const response = await fetch(
+        buildApiUrl(`${ENDPOINTS.orderEntry}/items?query=${encodeURIComponent(query)}`),
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setItemRows(items);
+      } else {
+        setItemLookupError(data?.message || 'Failed to search items.');
+      }
+    } catch {
+      setItemLookupError('Network error while searching items.');
+    } finally {
+      setIsItemsLoading(false);
+    }
+  };
+
+  const handleItemSelect = (item) => {
+    setIsItemLookupOpen(false);
+    if (activeRowId) {
+      setItems((current) => current.map((row) => (
+        row.id === activeRowId ? { ...row, code: item.code, description: item.description } : row
+      )));
+    }
+    setActiveRowId(null);
+  };
 
   const openCustomerLookup = () => {
     setIsCustomerLookupOpen(true);
     setCustomerSearch('');
+    setCustomerRows([]);
     setCustomerLookupError('');
+    setCreateCustomerError('');
+    setIsManualCustomerMode(false);
     handleCustomerSearch('');
   };
 
@@ -199,6 +407,7 @@ export default function OrderEntry() {
     setCustomerSearch(query);
     setIsCustomersLoading(true);
     setCustomerLookupError('');
+    setCreateCustomerError('');
 
     try {
       const token = getToken();
@@ -212,6 +421,20 @@ export default function OrderEntry() {
       if (response.ok) {
         const items = Array.isArray(data?.items) ? data.items : [];
         setCustomerRows(items);
+        if (items.length === 0) {
+          setIsManualCustomerMode(true);
+          setOrder((current) => ({
+            ...current,
+            account: query,
+            custKey: '',
+            deliveryAddress: '',
+            isNewCustomer: true,
+            creditTerms: '',
+            remarks: current.remarks || 'New Customer',
+          }));
+        } else {
+          setIsManualCustomerMode(false);
+        }
       } else {
         setCustomerLookupError(data?.message || 'Failed to search customers.');
       }
@@ -222,14 +445,96 @@ export default function OrderEntry() {
     }
   };
 
-  const handleCustomerSelect = async (customer) => {
-    setIsCustomerLookupOpen(false);
+  const handleStageNewCustomer = () => {
+    const customerName = customerSearch.trim();
 
+    if (!customerName) {
+      setCreateCustomerError('Customer name is required.');
+      return;
+    }
+
+    setPendingNewCustomerName(customerName);
+    setIsCustomerLookupOpen(false);
+    setIsManualCustomerMode(true);
+    setCreateCustomerError('');
+    setShipToOptions([]);
     setOrder((current) => ({
       ...current,
-      account: customer.storeName || customer.accountNo,
-      custKey: customer.custKey,
+      account: customerName,
+      custKey: '',
+      deliveryAddress: '',
+      isNewCustomer: true,
+      creditTerms: '',
+      remarks: current.remarks || 'New Customer',
     }));
+  };
+
+  const createPendingCustomer = async (deliveryAddress) => {
+    const customerName = pendingNewCustomerName.trim();
+
+    if (!customerName || order.custKey || isCreatingCustomer) {
+      return;
+    }
+
+    const customerAddress = deliveryAddress.trim();
+
+    if (!customerAddress) {
+      return;
+    }
+
+    setIsCreatingCustomer(true);
+    setCreateCustomerError('');
+
+    try {
+      const token = getToken();
+      const response = await fetch(
+        buildApiUrl(`${ENDPOINTS.orderEntry}/customers`),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            customerName,
+            customerAddress,
+            isNewCustomer: true,
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setCreateCustomerError(data?.message || 'Failed to add customer.');
+        return;
+      }
+
+      const created = data?.item ?? data?.Item ?? data;
+
+      if (created) {
+        setCustomerRows((current) => [created, ...current]);
+        setIsManualCustomerMode(true);
+        setPendingNewCustomerName('');
+        setOrder((current) => ({
+          ...current,
+          deliveryAddress: created.customerAddress || customerAddress,
+          isNewCustomer: getIsNewCustomer(created, true),
+        }));
+        await handleCustomerSelect(created, { isNewCustomer: true });
+      }
+    } catch {
+      setCreateCustomerError('Network error while adding customer.');
+    } finally {
+      setIsCreatingCustomer(false);
+    }
+  };
+
+  const handleCustomerSelect = async (customer, options = {}) => {
+    setIsCustomerLookupOpen(false);
+    setCreateCustomerError('');
+    const selectedIsNewCustomer = options.isNewCustomer ?? getIsNewCustomer(customer);
+    setIsManualCustomerMode(selectedIsNewCustomer);
 
     try {
       const token = getToken();
@@ -250,15 +555,19 @@ export default function OrderEntry() {
         const defaultTerm = terms.find(
           (t) => t.code === data.creditTermCode || t.crTermKey === data.creditTermKey,
         );
+        const resolvedDeliveryAddress = defaultShipTo
+          ? (defaultShipTo.addressString || defaultShipTo.name)
+          : (customer.customerAddress || '');
 
         setOrder((current) => ({
           ...current,
+          account: customer.customerName || customer.storeName || customer.accountNo,
+          custKey: customer.custKey,
           creditTerms: defaultTerm
-            ? defaultTerm.code || defaultTerm.creditTerm
+            ? defaultTerm.creditTerm || defaultTerm.code
             : (data.creditTerm || data.creditTermCode || current.creditTerms),
-          deliveryAddress: defaultShipTo
-            ? (defaultShipTo.addressString || defaultShipTo.name)
-            : current.deliveryAddress,
+          deliveryAddress: resolvedDeliveryAddress || current.deliveryAddress,
+          isNewCustomer: getIsNewCustomer(data, selectedIsNewCustomer),
         }));
       }
     } catch {
@@ -267,7 +576,7 @@ export default function OrderEntry() {
   };
 
   const openAddressLookup = () => {
-    if (!order.custKey) {
+    if (!order.custKey || order.isNewCustomer) {
       return;
     }
 
@@ -333,6 +642,12 @@ export default function OrderEntry() {
     setOrder((current) => ({ ...current, [field]: value }));
   };
 
+  const handleDeliveryAddressBlur = (event) => {
+    if (order.isNewCustomer && pendingNewCustomerName) {
+      createPendingCustomer(event.target.value);
+    }
+  };
+
   const updateItem = (rowId, field, value) => {
     setItems((current) => current.map((item) => (
       item.id === rowId ? { ...item, [field]: value } : item
@@ -392,14 +707,28 @@ export default function OrderEntry() {
                 <input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" value={order.orderDate} onChange={(event) => updateOrder('orderDate', event.target.value)} />
               </Field>
               <Field label="Credit Terms">
-                <select value={order.creditTerms} onChange={(event) => updateOrder('creditTerms', event.target.value)}>
-                  <option value="">-- Select Credit Term --</option>
-                  {creditTermOptions.map((ct) => (
-                    <option key={ct.crTermKey} value={ct.code || ct.creditTerm}>
-                      {ct.code}{ct.creditTerm ? ` - ${ct.creditTerm}` : ''}
-                    </option>
-                  ))}
-                </select>
+                {order.isNewCustomer ? (
+                  <input
+                    type="text"
+                    value={order.creditTerms}
+                    onChange={(event) => updateOrder('creditTerms', event.target.value)}
+                    maxLength={255}
+                    placeholder="Credit terms"
+                  />
+                ) : (
+                  <div className="etr-expense-combo">
+                    <button
+                      type="button"
+                      className={`etr-expense-lookup-button ${order.creditTerms ? 'has-value' : ''}`}
+                      onClick={openCreditTermLookup}
+                    >
+                      <span>{order.creditTerms || '-- Select Credit Term --'}</span>
+                      <svg className="etr-expense-chevron" viewBox="0 0 24 24">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </Field>
               <Field label="Customer PO">
                 <input type="text" value={order.customerPo} onChange={(event) => updateOrder('customerPo', event.target.value)} />
@@ -415,17 +744,44 @@ export default function OrderEntry() {
             <div className="etr-expense-grid details">
               <div className="etr-expense-details-left">
                 <Field label="Customer Account">
-                  <input type="text" value={order.account} onChange={(event) => updateOrder('account', event.target.value)} />
+                  <div className="etr-expense-combo">
+                    <button
+                      type="button"
+                      className={`etr-expense-lookup-button ${order.account ? 'has-value' : ''}`}
+                      onClick={openCustomerLookup}
+                    >
+                      <span>{order.account || '-- Select Customer --'}</span>
+                      <svg className="etr-expense-chevron" viewBox="0 0 24 24">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  </div>
                 </Field>
                 <Field label="Delivery Address">
-                  <select value={order.deliveryAddress} onChange={(event) => updateOrder('deliveryAddress', event.target.value)} disabled={!order.custKey}>
-                    <option value="">-- Select Delivery Address --</option>
-                    {shipToOptions.map((addr) => (
-                      <option key={addr.customerShipToID} value={addr.addressString || addr.name}>
-                        {addr.code ? `${addr.code} - ` : ''}{addr.addressString || addr.name}
-                      </option>
-                    ))}
-                  </select>
+                  {isManualCustomerMode || order.isNewCustomer ? (
+                    <input
+                      type="text"
+                      value={order.deliveryAddress}
+                      onChange={(event) => updateOrder('deliveryAddress', event.target.value)}
+                      onBlur={handleDeliveryAddressBlur}
+                      maxLength={255}
+                      placeholder="Delivery address"
+                    />
+                  ) : (
+                    <div className="etr-expense-combo">
+                      <button
+                        type="button"
+                        className={`etr-expense-lookup-button ${order.deliveryAddress ? 'has-value' : ''}`}
+                        onClick={openAddressLookup}
+                        disabled={!order.custKey}
+                      >
+                        <span>{order.deliveryAddress || '-- Select Delivery Address --'}</span>
+                        <svg className="etr-expense-chevron" viewBox="0 0 24 24">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </Field>
               </div>
               <Field label="Remarks" className="etr-expense-description">
@@ -504,8 +860,24 @@ export default function OrderEntry() {
                           ...
                         </button>
                       </td>
-                      <td><input value={item.code} onChange={(event) => updateItem(item.id, 'code', event.target.value)} /></td>
-                      <td><input value={item.description} onChange={(event) => updateItem(item.id, 'description', event.target.value)} /></td>
+                      <td>
+                        <input
+                          value={item.code}
+                          onClick={() => openItemLookup(item.id)}
+                          readOnly
+                          placeholder="Select code..."
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={item.description}
+                          onClick={() => openItemLookup(item.id)}
+                          readOnly
+                          placeholder="Select item..."
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       <td><input value={item.unit} onChange={(event) => updateItem(item.id, 'unit', event.target.value)} /></td>
                       <td><input type="number" value={item.detailPrice} onChange={(event) => updateItem(item.id, 'detailPrice', event.target.value)} /></td>
                       <td><input type="number" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} /></td>
@@ -537,9 +909,11 @@ export default function OrderEntry() {
         searchValue={customerSearch}
         onSearchChange={handleCustomerSearch}
         isLoading={isCustomersLoading}
-        error={customerLookupError}
+        isCreating={isCreatingCustomer}
+        error={customerLookupError || createCustomerError}
         rows={customerRows}
         onSelect={handleCustomerSelect}
+        onCreateNew={handleStageNewCustomer}
         onClose={() => setIsCustomerLookupOpen(false)}
       />
 
@@ -550,6 +924,24 @@ export default function OrderEntry() {
         rows={addressRows}
         onSelect={handleAddressSelect}
         onClose={() => setIsAddressLookupOpen(false)}
+      />
+
+      <CreditTermLookupModal
+        isOpen={isCreditTermLookupOpen}
+        rows={creditTermOptions}
+        onSelect={handleCreditTermSelect}
+        onClose={() => setIsCreditTermLookupOpen(false)}
+      />
+
+      <ItemLookupModal
+        isOpen={isItemLookupOpen}
+        searchValue={itemSearch}
+        onSearchChange={handleItemSearch}
+        isLoading={isItemsLoading}
+        error={itemLookupError}
+        rows={itemRows}
+        onSelect={handleItemSelect}
+        onClose={() => { setIsItemLookupOpen(false); setActiveRowId(null); }}
       />
     </div>
   );

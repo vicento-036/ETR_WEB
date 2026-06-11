@@ -1534,6 +1534,8 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
   const [sortConfig, setSortConfig] = useState({ key: 'entryDate', direction: 'desc' });
   const rowClickTimerRef = useRef(null);
   const [entryRows, setEntryRows] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [bookRows, setBookRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -1578,15 +1580,30 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     return () => controller.abort();
   }, []);
 
-  const loadJournalRows = useCallback(async (signal) => {
+  const loadJournalRows = useCallback(async (signal, targetPage = 1, search = '', sortCol = '', sortDir = '') => {
     const token = getToken();
     setIsLoading(true);
     setLoadError('');
 
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        pageSize: String(MANAGER_PAGE_SIZE),
+      });
+
+      if (search) {
+        params.set('search', search);
+      }
+      if (sortCol) {
+        params.set('sortColumn', sortCol);
+        params.set('sortDirection', sortDir || 'asc');
+      }
+
+      const pagedUrl = `${JOURNAL_ENTRY_ENDPOINT}?${params.toString()}`;
+
       const [journalResponse, bookResponse, employeeResponse] = await Promise.all([
-        fetch(buildApiUrl(JOURNAL_ENTRY_ENDPOINT), { headers, signal }),
+        fetch(buildApiUrl(pagedUrl), { headers, signal }),
         fetch(buildApiUrl(BOOK_OF_ACCOUNTS_ENDPOINT), { headers, signal }),
         fetch(buildApiUrl(EMPLOYEES_ENDPOINT), { headers, signal }),
       ]);
@@ -1608,11 +1625,15 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         : [];
       setBookRows(nextBookRows);
       setEntryRows(getApiCollection(journalData).map((row) => normalizeApiJournalEntry(row, nextBookRows, nextEmployeeRows)));
+      setTotalCount(journalData.totalCount ?? 0);
+      setTotalPages(journalData.totalPages ?? 1);
       setSelectedPostIds(new Set());
     } catch (error) {
       if (error.name !== 'AbortError') {
         setLoadError(error.message || 'Unable to load journal entries.');
         setEntryRows([]);
+        setTotalCount(0);
+        setTotalPages(1);
       }
     } finally {
       if (!signal?.aborted) {
@@ -1621,84 +1642,32 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
     }
   }, []);
 
+  const normalizedQuery = query.trim();
+
   useEffect(() => {
     const controller = new AbortController();
-    loadJournalRows(controller.signal);
+    loadJournalRows(controller.signal, page, normalizedQuery, sortConfig.key, sortConfig.direction);
 
     return () => controller.abort();
-  }, [loadJournalRows]);
+  }, [loadJournalRows, page, normalizedQuery, sortConfig.key, sortConfig.direction]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [normalizedQuery, sortConfig.key, sortConfig.direction]);
 
   const refreshJournalRows = () => {
     setBulkPostMessage('');
     setBulkPostError('');
     const controller = new AbortController();
-    loadJournalRows(controller.signal);
+    loadJournalRows(controller.signal, page, normalizedQuery, sortConfig.key, sortConfig.direction);
   };
 
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return entryRows;
-    }
-
-    return entryRows.filter((row) => (
-      managerColumns.some((column) => String(row[column.key] || '').toLowerCase().includes(normalizedQuery))
-    ));
-  }, [entryRows, query]);
-
-  const sortedRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const hasQuery = normalizedQuery.length > 0;
-
-    const column = managerColumns.find((item) => item.key === sortConfig.key);
-
-    if (!column && !hasQuery) {
-      return filteredRows;
-    }
-
-    return [...filteredRows].sort((first, second) => {
-      // Primary: search relevance (when query is active)
-      if (hasQuery) {
-        const firstRelevance = getSearchRelevance(first, normalizedQuery);
-        const secondRelevance = getSearchRelevance(second, normalizedQuery);
-        if (firstRelevance !== secondRelevance) {
-          return secondRelevance - firstRelevance;
-        }
-      }
-
-      // Secondary: user-selected column sort
-      if (column) {
-        const firstValue = getJournalSortValue(first, column);
-        const secondValue = getJournalSortValue(second, column);
-
-        if (firstValue < secondValue) {
-          return sortConfig.direction === 'asc' ? -1 : 1;
-        }
-
-        if (firstValue > secondValue) {
-          return sortConfig.direction === 'asc' ? 1 : -1;
-        }
-      }
-
-      // Tie-breaker: sort by journalEntryId descending (newest first)
-      const firstId = Number(first.journalEntryId || 0);
-      const secondId = Number(second.journalEntryId || 0);
-      return secondId - firstId;
-    });
-  }, [filteredRows, sortConfig, query]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / MANAGER_PAGE_SIZE));
   const visiblePages = getVisiblePages(page, totalPages);
-  const pagedRows = sortedRows.slice((page - 1) * MANAGER_PAGE_SIZE, page * MANAGER_PAGE_SIZE);
+  const pagedRows = entryRows;
   const pendingPagedRows = pagedRows.filter((row) => normalizeJournalStatus(row.status) === 'Pending' && Number(row.journalEntryId || 0) > 0);
   const selectedPostCount = selectedPostIds.size;
   const areAllPendingPagedRowsSelected = pendingPagedRows.length > 0
     && pendingPagedRows.every((row) => selectedPostIds.has(Number(row.journalEntryId)));
-
-  useEffect(() => {
-    setPage(1);
-  }, [query, sortConfig.key, sortConfig.direction]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
@@ -1919,7 +1888,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
         <div className="etr-journal-panel-head">
           <div>
             <h2>Journal Entries</h2>
-            <span>{isLoading ? 'Loading journal entries...' : `${sortedRows.length} record${sortedRows.length === 1 ? '' : 's'} found`}</span>
+            <span>{isLoading ? 'Loading journal entries...' : `${totalCount} record${totalCount === 1 ? '' : 's'} found`}</span>
           </div>
 
           <label className="etr-journal-search">
@@ -1988,7 +1957,7 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
               </tr>
             </thead>
             <tbody>
-              {sortedRows.length === 0 ? (
+              {entryRows.length === 0 ? (
                 <tr>
                   <td colSpan={managerColumns.length + 1}>No journal entries found.</td>
                 </tr>
@@ -2024,10 +1993,10 @@ export function JournalEntryManagerView({ onNewEntry, onOpenEntry }) {
           </table>
         </div>
 
-        {sortedRows.length > 0 ? (
+        {totalCount > 0 ? (
           <div className="etr-journal-pagination" aria-label="Journal manager pagination">
             <span>
-              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
+              Showing {(page - 1) * MANAGER_PAGE_SIZE + 1}-{Math.min(page * MANAGER_PAGE_SIZE, totalCount)} of {totalCount}
             </span>
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
               Previous
