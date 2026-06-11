@@ -34,3 +34,43 @@ img,
 svg {
   max-width: 100%;
 }
+
+.etr-text-kicker,
+.etr-text-label {
+  margin: 0;
+  color: #6b7a90;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.etr-text-title {
+  margin: 0;
+  color: #102033;
+  font-size: clamp(1.12rem, 1vw + 0.95rem, 1.35rem);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.etr-text-subtitle,
+.etr-text-muted {
+  color: #6f7f95;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.etr-text-body {
+  color: #22334a;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.etr-text-value {
+  color: #0f2640;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
